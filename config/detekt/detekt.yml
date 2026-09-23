@@ -1,0 +1,107 @@
+# detekt 2.0.0-alpha.6 (플러그인 id: dev.detekt) 용 설정.
+# 2.0 에서 `build:` / `maxIssues` 블록은 사라졌다. 빌드 실패 임계값은 Gradle 확장의 failOnSeverity 로 설정한다.
+# 키 이름은 detekt main 브랜치의 default-detekt-config.yml 기준(1.x 의 threshold 계열이 전부 개명됐다).
+# 루트 build.gradle.kts 에 buildUponDefaultConfig = true 를 켜고 이 파일을 덮어쓰는 전제.
+
+config:
+  validation: true
+  warningsAsErrors: true
+  checkExhaustiveness: false
+  excludes: []
+
+complexity:
+  active: true
+  # R-21-01 함수 길이 상한 (detekt 기본값 60줄)
+  LongMethod:
+    active: true
+    allowedLines: 60
+  # R-21-02 파라미터 개수 상한 (함수 5 / 생성자 6)
+  LongParameterList:
+    active: true
+    allowedFunctionParameters: 5
+    allowedConstructorParameters: 6
+    ignoreDefaultParameters: false
+    ignoreDataClasses: true
+    # @Composable 은 슬롯/콜백 파라미터가 많고, @Inject 생성자는 DI 그래프가 개수를 정한다.
+    # `ignoreAnnotated` 는 detekt 의 범용 프로퍼티(validation 제외 목록 `.*>.*>ignoreAnnotated`)라
+    # 규칙별 기본 설정에 없어도 유효하다. 같은 블록의 `ignoreAnnotatedParameter` 와 혼동하지 말 것 —
+    # 그쪽은 "애노테이션 붙은 **파라미터**를 세지 않는다"라서 여기 의도(선언 단위 면제)와 다르다.
+    ignoreAnnotated: ['Composable', 'Inject']
+  NestedBlockDepth:
+    active: true
+    allowedDepth: 4
+  ComplexCondition:
+    active: true
+    allowedConditions: 3
+  CyclomaticComplexMethod:
+    active: true
+    allowedComplexity: 14
+  TooManyFunctions:
+    active: true
+    allowedFunctionsPerClass: 15
+    ignoreAnnotatedFunctions: ['Preview', 'Composable']
+
+coroutines:
+  active: true
+  # R-22-01 GlobalScope 금지 (기본 비활성 -> 켠다). 타입 해석 필요.
+  GlobalCoroutineUsage:
+    active: true
+  # R-22-02 디스패처는 주입받는다. 타입 해석 필요.
+  InjectDispatcher:
+    active: true
+    dispatcherNames: ['IO', 'Default', 'Unconfined']
+  SuspendFunWithCoroutineScopeReceiver:
+    active: true
+  SuspendFunWithFlowReturnType:
+    active: true
+  RedundantSuspendModifier:
+    active: true
+  SleepInsteadOfDelay:
+    active: true
+
+potential-bugs:
+  active: true
+  # R-20-01 `!!` 금지. 타입 해석이 있는 태스크(detekt<Variant>/detektMain)에서만 동작한다.
+  UnsafeCallOnNullableType:
+    active: true
+
+style:
+  active: true
+  # R-20-02 와일드카드 import 금지 (Kotlin 스타일 가이드)
+  WildcardImport:
+    active: true
+    excludeImports: []
+  ForbiddenComment:
+    active: true
+  # 줄 길이. detekt 기본값은 120이지만 팩 확정값(Kotlin 스타일 가이드)은 100이며
+  # .editorconfig 의 ktlint max_line_length 와 같은 값이어야 두 도구가 충돌하지 않는다.
+  MaxLineLength:
+    active: true
+    maxLineLength: 100
+    excludePackageStatements: true
+    excludeImportStatements: true
+    excludeRawStrings: true
+  MagicNumber:
+    active: true
+    ignorePropertyDeclaration: true
+    ignoreCompanionObjectPropertyDeclaration: true
+    ignoreNamedArgument: true
+    # 위 LongParameterList 와 같은 범용 프로퍼티. MagicNumber 기본 설정의 `ignoreAnnotation` 은
+    # "애노테이션 인자 안의 숫자를 무시한다"는 다른 뜻이라 대체재가 아니다.
+    ignoreAnnotated: ['Composable', 'Preview']
+  ReturnCount:
+    active: true
+    max: 3
+    excludeGuardClauses: true
+  # @Preview 함수는 private 이고 호출자가 IDE·스크린샷 도구뿐이라 항상 "미사용"으로 잡힌다.
+  UnusedPrivateFunction:
+    active: true
+    ignoreAnnotated: ['Preview']
+
+naming:
+  active: true
+  FunctionNaming:
+    active: true
+    functionPattern: '[a-z][a-zA-Z0-9]*'
+    # @Composable Unit 함수는 명사형 PascalCase 라서 패턴에서 제외한다.
+    ignoreAnnotated: ['Composable', 'Test']

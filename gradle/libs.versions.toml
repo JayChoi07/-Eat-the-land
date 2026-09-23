@@ -1,0 +1,137 @@
+# gradle/libs.versions.toml 에 붙여넣을 블록.
+# 버전은 android/research/testing-ci.md "확인 버전 표"(2026-09-09 조사) 확인본.
+# 별칭은 convention plugin 의 libs.findLibrary(...) 문자열과 1:1로 맞춰야 한다(점 -> 하이픈).
+
+[versions]
+agp = "9.4.0"
+kotlin = "2.4.20"
+ksp = "2.3.11"
+composeBom = "2026.08.00"
+hilt = "2.60.1"
+hiltExt = "1.4.0"
+navigation3 = "1.1.7"
+lifecycle = "2.11.0"
+coroutines = "1.11.0"
+serialization = "1.11.0"
+turbine = "1.2.1"
+konsist = "0.17.3"
+detekt = "2.0.0-alpha.6"
+ktlintGradle = "14.2.0"
+ktlint = "1.8.0"
+roborazzi = "1.74.0"
+robolectric = "4.16.1"
+junit4 = "4.13.2"
+# 앱 셸(:app)이 직접 쓰는 세 개. 확인일 2026-09-16, 근거는 [libraries] 의 "앱 셸" 그룹 주석 참조.
+activity = "1.13.0"
+coreSplashscreen = "1.2.0"
+material3Adaptive = "1.3.0"
+
+# --- 이 앱 전용 (확인일 2026-09-23) ---
+h3 = "4.5.0"                    # https://central.sonatype.com/artifact/com.uber/h3-android
+mapsCompose = "8.6.0"           # https://github.com/googlemaps/android-maps-compose/releases
+playServicesMaps = "20.0.0"     # https://developers.google.com/android/guides/releases
+playServicesLocation = "21.4.0"
+firebaseBom = "34.19.0"         # https://firebase.google.com/support/release-notes/android
+googleServices = "4.5.0"
+coroutinesPlayServices = "1.11.0"
+startup = "1.2.0"
+
+[libraries]
+# --- build-logic 이 compileOnly 로 참조하는 플러그인 아티팩트 ---
+# AGP 9 공식 권고는 내부 구현이 아닌 공개 API 아티팩트(gradle-api).
+android-gradlePlugin = { group = "com.android.tools.build", name = "gradle-api", version.ref = "agp" }
+kotlin-gradlePlugin = { group = "org.jetbrains.kotlin", name = "kotlin-gradle-plugin", version.ref = "kotlin" }
+compose-gradlePlugin = { group = "org.jetbrains.kotlin", name = "compose-compiler-gradle-plugin", version.ref = "kotlin" }
+ksp-gradlePlugin = { group = "com.google.devtools.ksp", name = "com.google.devtools.ksp.gradle.plugin", version.ref = "ksp" }
+# Quality.kt 가 참조하는 확장 타입(dev.detekt.gradle.extensions.DetektExtension, org.jlleitschuh.gradle.ktlint.KtlintExtension).
+detekt-gradlePlugin = { group = "dev.detekt", name = "detekt-gradle-plugin", version.ref = "detekt" }
+ktlint-gradlePlugin = { group = "org.jlleitschuh.gradle", name = "ktlint-gradle", version.ref = "ktlintGradle" }
+# compose 컨벤션 플러그인이 RoborazziExtension.outputDir 을 커밋 가능한 경로로 옮긴다.
+roborazzi-gradlePlugin = { group = "io.github.takahirom.roborazzi", name = "roborazzi-gradle-plugin", version.ref = "roborazzi" }
+# 컨벤션 플러그인이 pluginManager.apply 하는 플러그인의 아티팩트. 지금은 타입 참조가 없지만
+# ksp-gradlePlugin 과 같은 이유로 목록을 맞춰 둔다. 실행 시점 클래스패스는 루트의 apply false 가 공급한다.
+hilt-gradlePlugin = { group = "com.google.dagger", name = "hilt-android-gradle-plugin", version.ref = "hilt" }
+
+# --- Compose (버전은 BOM 이 결정) ---
+androidx-compose-bom = { group = "androidx.compose", name = "compose-bom", version.ref = "composeBom" }
+androidx-compose-material3 = { group = "androidx.compose.material3", name = "material3" }
+androidx-compose-ui-tooling = { group = "androidx.compose.ui", name = "ui-tooling" }
+androidx-compose-ui-tooling-preview = { group = "androidx.compose.ui", name = "ui-tooling-preview" }
+androidx-compose-ui-test-junit4 = { group = "androidx.compose.ui", name = "ui-test-junit4" }
+androidx-compose-ui-test-manifest = { group = "androidx.compose.ui", name = "ui-test-manifest" }
+
+# --- 화면 계층 ---
+androidx-lifecycle-runtime-compose = { group = "androidx.lifecycle", name = "lifecycle-runtime-compose", version.ref = "lifecycle" }
+androidx-lifecycle-viewmodel-compose = { group = "androidx.lifecycle", name = "lifecycle-viewmodel-compose", version.ref = "lifecycle" }
+androidx-navigation3-runtime = { group = "androidx.navigation3", name = "navigation3-runtime", version.ref = "navigation3" }
+androidx-navigation3-ui = { group = "androidx.navigation3", name = "navigation3-ui", version.ref = "navigation3" }
+# NavDisplay 의 entryDecorators 에 rememberViewModelStoreNavEntryDecorator 를 넣어야 ViewModel 이 NavEntry 단위로 산다.
+androidx-lifecycle-viewmodel-navigation3 = { group = "androidx.lifecycle", name = "lifecycle-viewmodel-navigation3", version.ref = "lifecycle" }
+# hilt-navigation-compose 의 hiltViewModel() 은 1.4.0 에서 deprecated 이고 Navigation 2 를 함께 끌고 온다.
+# Nav 3 프로젝트는 hilt-lifecycle-viewmodel-compose 를 직접 쓴다.
+androidx-hilt-lifecycle-viewmodel-compose = { group = "androidx.hilt", name = "hilt-lifecycle-viewmodel-compose", version.ref = "hiltExt" }
+
+# --- DI ---
+hilt-android = { group = "com.google.dagger", name = "hilt-android", version.ref = "hilt" }
+hilt-compiler = { group = "com.google.dagger", name = "hilt-android-compiler", version.ref = "hilt" }
+
+# --- Kotlin 런타임 ---
+kotlinx-coroutines-android = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-android", version.ref = "coroutines" }
+kotlinx-coroutines-test = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-test", version.ref = "coroutines" }
+kotlinx-serialization-json = { group = "org.jetbrains.kotlinx", name = "kotlinx-serialization-json", version.ref = "serialization" }
+
+# --- 테스트 ---
+junit4 = { group = "junit", name = "junit", version.ref = "junit4" }
+turbine = { group = "app.cash.turbine", name = "turbine", version.ref = "turbine" }
+konsist = { group = "com.lemonappdev", name = "konsist", version.ref = "konsist" }
+robolectric = { group = "org.robolectric", name = "robolectric", version.ref = "robolectric" }
+roborazzi = { group = "io.github.takahirom.roborazzi", name = "roborazzi", version.ref = "roborazzi" }
+roborazzi-compose = { group = "io.github.takahirom.roborazzi", name = "roborazzi-compose", version.ref = "roborazzi" }
+roborazzi-junit-rule = { group = "io.github.takahirom.roborazzi", name = "roborazzi-junit-rule", version.ref = "roborazzi" }
+
+# --- 앱 셸(:app 전용) ---
+# 컨벤션 플러그인이 붙이지 않는다. :app/build.gradle.kts 가 직접 선언한다(사용처가 하나뿐 — R-10-14).
+# ComponentActivity · setContent · enableEdgeToEdge (R-18-06, R-18-07).
+# https://developer.android.com/jetpack/androidx/releases/activity — 1.13.0 stable(2026-03-11), 확인일 2026-09-16.
+androidx-activity-compose = { group = "androidx.activity", name = "activity-compose", version.ref = "activity" }
+# installSplashScreen() (R-18-03).
+# https://developer.android.com/jetpack/androidx/releases/core — core-splashscreen 1.2.0 stable, 확인일 2026-09-16.
+androidx-core-splashscreen = { group = "androidx.core", name = "core-splashscreen", version.ref = "coreSplashscreen" }
+# currentWindowAdaptiveInfoV2() (R-18-13; 구 함수는 1.3.0 에서 deprecated). Compose BOM 이 이 그룹의 버전을 관리하지 않아 버전을 따로 적는다.
+# https://developer.android.com/jetpack/androidx/releases/compose-material3-adaptive — 1.3.0 stable(2026-08-12), 확인일 2026-09-16.
+androidx-compose-material3-adaptive = { group = "androidx.compose.material3.adaptive", name = "adaptive", version.ref = "material3Adaptive" }
+
+# --- 이 앱 전용 ---
+h3-android = { group = "com.uber", name = "h3-android", version.ref = "h3" }
+maps-compose = { group = "com.google.maps.android", name = "maps-compose", version.ref = "mapsCompose" }
+play-services-maps = { group = "com.google.android.gms", name = "play-services-maps", version.ref = "playServicesMaps" }
+play-services-location = { group = "com.google.android.gms", name = "play-services-location", version.ref = "playServicesLocation" }
+firebase-bom = { group = "com.google.firebase", name = "firebase-bom", version.ref = "firebaseBom" }
+firebase-auth = { group = "com.google.firebase", name = "firebase-auth" }
+firebase-firestore = { group = "com.google.firebase", name = "firebase-firestore" }
+firebase-functions = { group = "com.google.firebase", name = "firebase-functions" }
+firebase-common = { group = "com.google.firebase", name = "firebase-common" }
+kotlinx-coroutines-play-services = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-play-services", version.ref = "coroutinesPlayServices" }
+androidx-startup-runtime = { group = "androidx.startup", name = "startup-runtime", version.ref = "startup" }
+
+[plugins]
+android-application = { id = "com.android.application", version.ref = "agp" }
+android-library = { id = "com.android.library", version.ref = "agp" }
+# AGP 9 는 Kotlin 이 built-in 이므로 org.jetbrains.kotlin.android 항목을 두지 않는다.
+kotlin-compose = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
+kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }
+ksp = { id = "com.google.devtools.ksp", version.ref = "ksp" }
+hilt = { id = "com.google.dagger.hilt.android", version.ref = "hilt" }
+detekt = { id = "dev.detekt", version.ref = "detekt" }
+ktlint = { id = "org.jlleitschuh.gradle.ktlint", version.ref = "ktlintGradle" }
+roborazzi = { id = "io.github.takahirom.roborazzi", version.ref = "roborazzi" }
+
+# build-logic 이 등록하는 컨벤션 플러그인. includeBuild 로 해석되므로 버전은 "unspecified".
+convention-android-application = { id = "convention.android.application", version = "unspecified" }
+convention-android-application-compose = { id = "convention.android.application.compose", version = "unspecified" }
+convention-android-library = { id = "convention.android.library", version = "unspecified" }
+convention-android-library-compose = { id = "convention.android.library.compose", version = "unspecified" }
+convention-android-feature = { id = "convention.android.feature", version = "unspecified" }
+convention-android-hilt = { id = "convention.android.hilt", version = "unspecified" }
+
+google-services = { id = "com.google.gms.google-services", version.ref = "googleServices" }

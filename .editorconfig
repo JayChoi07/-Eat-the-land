@@ -1,0 +1,25 @@
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+indent_style = space
+indent_size = 4
+max_line_length = 100
+
+[*.{kt,kts}]
+ktlint_code_style = android_studio
+ktlint_function_naming_ignore_when_annotated_with = Composable, Test
+ktlint_standard_function-signature = disabled
+# android_studio 프리셋은 선언부 trailing comma 를 금지하지만 팩 규칙 R-20-14 는 쓰라고 한다. 규칙이 이긴다.
+ij_kotlin_allow_trailing_comma = true
+ij_kotlin_allow_trailing_comma_on_call_site = true
+# function-signature 와 같은 이유. 프리셋이 생성자 파라미터를 한 줄로 접어 trailing comma 스타일과 충돌한다.
+ktlint_standard_class-signature = disabled
+
+[*.md]
+max_line_length = off
+
+[*.yml]
+indent_size = 2

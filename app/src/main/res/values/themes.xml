@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  XML 테마는 시작 테마와 그 뒤 테마 둘뿐이다 (R-18-12). 여기에 브랜드 색·타이포를 적지 않는다 —
+  색의 단일 출처는 :core:designsystem 의 Compose 테마다 (R-18-10, R-18-11).
+  Theme.App 의 parent 를 플랫폼 테마로 둔 이유는 Compose 전용 앱에 Material Components 의존성을
+  끌어들이지 않기 위해서다. R-18-12 는 parent 를 강제하지 않는다.
+-->
+<resources>
+
+    <style name="Theme.App" parent="android:Theme.Material.NoActionBar" />
+
+    <!-- postSplashScreenTheme 지정은 스플래시 API 의 필수 항목이다 (R-18-03). -->
+    <style name="Theme.App.Starting" parent="Theme.SplashScreen">
+        <item name="windowSplashScreenBackground">@color/splash_background</item>
+        <item name="postSplashScreenTheme">@style/Theme.App</item>
+        <!-- 브랜드 아이콘이 생기면 windowSplashScreenAnimatedIcon 을 추가한다 (R-18-03). -->
+    </style>
+</resources>

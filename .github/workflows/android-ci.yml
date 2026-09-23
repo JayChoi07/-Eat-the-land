@@ -1,0 +1,51 @@
+name: android-ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: gradle/actions/setup-gradle@v6
+        with:
+          validate-wrappers: true
+          cache-read-only: ${{ github.ref != 'refs/heads/main' }}
+
+      # 게이트 1: 포맷 (FORMATTER = ktlint-gradle)
+      - name: ktlint
+        run: ./gradlew ktlintCheck --no-daemon
+
+      # 게이트 2: 정적 분석. 타입 해석이 필요한 규칙(UnsafeCallOnNullableType, InjectDispatcher,
+      # GlobalCoroutineUsage)은 plain `detekt` 태스크에서 동작하지 않으므로 variant 태스크를 쓴다.
+      - name: detekt
+        run: ./gradlew detektDebug --no-daemon
+
+      # 게이트 3: 단위 테스트 + Konsist 아키텍처 테스트 + Roborazzi 스크린샷 검증
+      - name: unit + konsist + screenshot
+        run: ./gradlew testDebugUnitTest verifyRoborazziDebug --no-daemon
+
+      # 게이트 4: 조립
+      - name: assemble
+        run: ./gradlew assembleDebug --no-daemon
+
+      # R-31-06: 스크린샷 diff 는 성공한 실행에서도 봐야 하므로 always()
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: reports
+          path: '**/build/reports/**'

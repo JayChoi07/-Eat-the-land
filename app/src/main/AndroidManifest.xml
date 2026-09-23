@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  루트 Activity 는 런처 하나뿐이고 launchMode 를 적지 않는다 (R-18-05).
+  android:exported="true" 는 인텐트 필터를 가진 이 항목에만 붙는다(기본값 false 는 R-40-07).
+  android:configChanges 는 적지 않는다 — 재생성을 전제로 만들고 상태로 복원한다 (R-18-14).
+  package 속성은 쓰지 않는다. namespace 는 빌드 파일이 정한다 (R-19-03).
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <application
+        android:name=".EatTheLandApplication"
+        android:label="@string/app_name"
+        android:supportsRtl="true"
+        android:theme="@style/Theme.App">
+
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:theme="@style/Theme.App.Starting"
+            android:windowSoftInputMode="adjustResize">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+    </application>
+</manifest>
