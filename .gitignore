@@ -8,8 +8,8 @@ keystore.properties
 *.jks
 app/google-services.json
 .kotlin/
-functions/node_modules/
-functions/lib/
+rules/node_modules/
+rules/serviceAccount.json
 firebase-debug.log
 firestore-debug.log
 ui-debug.log
