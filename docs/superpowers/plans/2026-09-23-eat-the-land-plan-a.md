@@ -1,12 +1,12 @@
-# 땅따먹기 플랜 A — 스캐폴딩 · Firebase 연결 · 온보딩 · 영토 보기
+# 땅따먹기 플랜 A — 스캐폴딩 · Firebase 연결 · 온보딩 · 영토 보기 (v2: 카카오맵 + Firebase Spark 규칙 판정)
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** 빈 레포에서 "익명 로그인 → 닉네임 온보딩 → Google 지도 위에 Firestore의 영토(H3 셀)가 실시간으로 그려지는" 앱까지 만든다. 위치 추적·캡처(플랜 B), 랭킹·설정·배치·배포(플랜 C)는 뒤 플랜이 맡는다.
+**Goal:** 빈 레포에서 "익명 로그인 → 닉네임 온보딩 → 카카오 지도 위에 Firestore의 영토(H3 셀)가 실시간으로 그려지는" 앱까지 만든다. 카드 없이(Spark·카카오 무료 쿼터) 운영한다. 위치 추적·캡처(플랜 B), 랭킹·설정·배치·배포(플랜 C)는 뒤 플랜이 맡는다.
 
-**Architecture:** android-standards 팩 그린필드 골격(`:app` + `:core:*` + `:feature:*`, Nav3 1.1.7, Hilt KSP, MVVM-UDF). Firebase(Auth 익명·Firestore·Functions)는 `:core:network` 데이터소스 뒤에 숨기고 `:core:data` Repository 인터페이스로만 노출한다. H3 격자는 `:core:common`의 `HexGrid` 인터페이스로 감싸 JVM 단위 테스트에서는 fake로 대체한다.
+**Architecture:** android-standards 팩 그린필드 골격(`:app` + `:core:*` + `:feature:*`, Nav3 1.1.7, Hilt KSP, MVVM-UDF). Firebase(Auth 익명·Firestore, Functions 없음 — 보안 규칙이 서버 판정)는 `:core:network` 데이터소스 뒤에 숨기고 `:core:data` Repository 인터페이스로만 노출한다. H3 격자는 `:core:common`의 `HexGrid` 인터페이스로 감싸 JVM 단위 테스트에서는 fake로 대체한다.
 
-**Tech Stack:** Kotlin 2.4.20 · AGP 9.4.0 · Gradle 9.7.1 · JDK 17 · Compose BOM 2026.08.00 · Nav3 1.1.7 · Hilt 2.60.1 · h3-android 4.5.0 · maps-compose 8.6.0 · play-services-maps 20.0.0 · Firebase BoM 34.19.0 · google-services 4.5.0 · Cloud Functions v2 (Node 20, TypeScript) · Roborazzi 1.74.0
+**Tech Stack:** Kotlin 2.4.20 · AGP 9.4.0 · Gradle 9.7.1 · JDK 17 · Compose BOM 2026.08.00 · Nav3 1.1.7 · Hilt 2.60.1 · h3-android 4.5.0 · 카카오맵 SDK 2.15.2 · Firebase BoM 34.19.0 (Spark) · google-services 4.5.0 · @firebase/rules-unit-testing (Jest) · Roborazzi 1.74.0
 
 **Spec:** `docs/superpowers/specs/2026-09-23-eat-the-land-design.md`
 
@@ -29,7 +29,7 @@
 
 ## Review Focus
 
-1. **닉네임 중복 경합** — 두 기기가 같은 닉네임을 동시에 보내면 하나만 성공하고 다른 쪽은 `already-exists`를 받아야 한다 → Task 4 `setNickname` 트랜잭션 테스트
+1. **닉네임 중복 경합** — 두 기기가 같은 닉네임을 동시에 보내면 하나만 성공하고 다른 쪽은 NicknameTaken 을 받아야 한다 → Task 4 `nicknames` create-only 규칙 테스트 + Task 5 PERMISSION_DENIED 매핑
 2. **오프라인 첫 실행** — 네트워크 없이 앱을 켜면 익명 로그인이 실패해도 크래시 없이 온보딩 화면에 재시도 버튼이 떠야 한다 → Task 5 `DefaultPlayerRepositoryTest` 실패 경로 + Task 6 ViewModel 에러 상태 테스트
 3. **권한 거부** — 위치 권한을 거부해도 온보딩이 막히지 않고(닉네임 단계로 진행) 지도 화면에서 내 위치 버튼만 비활성 → Task 6 ViewModel `onPermissionResult(granted=false)` 테스트
 4. **줌 아웃 뷰포트** — 줌 14 미만에서는 셀 리스너를 걸지 않고 오버레이를 숨겨 Firestore read 폭주를 막는다 → Task 8 `MapViewModelTest` 줌 임계 테스트
@@ -552,43 +552,27 @@ EOF
 
 ---
 
-### Task 3: Firebase 프로젝트 · 앱 연결 · App Startup 초기화
+### Task 3: Firebase 연결 (Spark) · App Startup 초기화
 
 **Files:**
-- Create: `app/google-services.json` (커밋 금지), `firebase.json`, `.firebaserc`, `firestore.rules`, `firestore.indexes.json`
+- Create: `app/google-services.json` (커밋 금지), `.firebaserc`
 - Create: `app/src/main/kotlin/com/jaychoi/eattheland/startup/FirebaseInitializer.kt`
-- Modify: `build.gradle.kts`(루트), `app/build.gradle.kts`, `app/src/main/AndroidManifest.xml`
+- Modify: `build.gradle.kts`(루트), `app/build.gradle.kts`, `app/src/main/AndroidManifest.xml`, `firebase.json`
 
 **Interfaces:**
-- Produces: 프로세스 시작 시 `FirebaseApp` 초기화 완료(App Startup). Firestore 보안 규칙 파일(스펙 §4)
+- Produces: 프로세스 시작 시 `FirebaseApp` 초기화 완료(App Startup). Firebase CLI 프로젝트 alias `default`
 
-- [ ] **Step 1: (사용자 수동) Firebase 콘솔 작업**
-
-에이전트는 할 수 없다. 사용자에게 아래를 요청하고 완료를 기다린다:
-1. https://console.firebase.google.com → 프로젝트 추가 `eat-the-land` (Analytics 끔)
-2. Android 앱 추가: 패키지 `com.jaychoi.eattheland` **와** `com.jaychoi.eattheland.debug` 두 개 (debug suffix 때문에 두 앱이 필요, R-19-05). `google-services.json` 다운로드 → `app/google-services.json`
-3. Authentication → Sign-in method → **익명** 사용 설정
-4. Firestore Database → 데이터베이스 만들기 → 리전 `asia-northeast3 (서울)`, **프로덕션 모드**
-5. 요금제 Blaze 전환 (Cloud Functions 필수. 무료 한도 안에서는 과금 없음)
+- [ ] **Step 1: (사용자 수동) Firebase 콘솔** — 바탕화면 `땅따먹기_수동설정_체크리스트.md` ① 1~7. Blaze 업그레이드 없음.
 
 확인:
 ```bash
-python -c "import json;d=json.load(open('app/google-services.json'));print([c['client_info']['android_client_info']['package_name'] for c in d['client']])"
+python -c "import json;d=json.load(open('app/google-services.json'));print(sorted(c['client_info']['android_client_info']['package_name'] for c in d['client']))"
 ```
-Expected: `['com.jaychoi.eattheland', 'com.jaychoi.eattheland.debug']` (순서 무관)
+Expected: `['com.jaychoi.eattheland', 'com.jaychoi.eattheland.debug']`
 
 - [ ] **Step 2: Gradle 연결**
 
-루트 `build.gradle.kts` `plugins` 에 추가:
-```kotlin
-    alias(libs.plugins.google.services) apply false
-```
-
-`app/build.gradle.kts` `plugins` 에 추가:
-```kotlin
-    alias(libs.plugins.google.services)
-```
-`app/build.gradle.kts` `dependencies` 에 추가:
+루트 `build.gradle.kts` `plugins` 에 `alias(libs.plugins.google.services) apply false`. `app/build.gradle.kts` `plugins` 에 `alias(libs.plugins.google.services)`, `dependencies` 에:
 ```kotlin
     // Firebase 초기화만 :app 이 한다(App Startup Initializer). Auth·Firestore 사용은 :core:network 에.
     implementation(platform(libs.firebase.bom))
@@ -596,7 +580,7 @@ Expected: `['com.jaychoi.eattheland', 'com.jaychoi.eattheland.debug']` (순서 �
     implementation(libs.androidx.startup.runtime)
 ```
 
-- [ ] **Step 3: FirebaseInitProvider 제거 + Initializer (스펙 §12 결정 5, R-18-02)**
+- [ ] **Step 3: FirebaseInitProvider 제거 + Initializer (R-18-02)**
 
 `app/src/main/kotlin/com/jaychoi/eattheland/startup/FirebaseInitializer.kt`:
 ```kotlin
@@ -619,7 +603,7 @@ class FirebaseInitializer : Initializer<FirebaseApp> {
 }
 ```
 
-`app/src/main/AndroidManifest.xml` 의 `<manifest>` 에 `xmlns:tools="http://schemas.android.com/tools"` 추가, `<application>` 안에 (activity 아래):
+`AndroidManifest.xml`: `<manifest>` 에 `xmlns:tools="http://schemas.android.com/tools"`, `<application>` 안 activity 아래:
 ```xml
         <!-- Firebase 자동 초기화 프로바이더를 끄고 App Startup 으로 합친다 (R-18-02) -->
         <provider
@@ -638,99 +622,40 @@ class FirebaseInitializer : Initializer<FirebaseApp> {
         </provider>
 ```
 
-- [ ] **Step 4: Firebase CLI 프로젝트 파일 (규칙·인덱스·에뮬레이터)**
+- [ ] **Step 4: Firebase CLI 프로젝트 연결 + 규칙 배포**
 
-```bash
-cd ~/StudioProjects/Eat-the-land
-firebase login:list
-firebase use --add   # 프로젝트 eat-the-land 선택, alias: default
-```
-
-`firebase.json`:
+`firebase.json` 을 다음으로 교체 (functions 섹션 제거):
 ```json
 {
   "firestore": { "rules": "firestore.rules", "indexes": "firestore.indexes.json" },
-  "functions": [{ "source": "functions", "codebase": "default", "runtime": "nodejs20",
-                  "predeploy": ["npm --prefix \"$RESOURCE_DIR\" run build"] }],
   "emulators": {
-    "auth": { "port": 9099 },
     "firestore": { "port": 8080 },
-    "functions": { "port": 5001 },
-    "ui": { "enabled": true, "port": 4000 },
+    "ui": { "enabled": false },
     "singleProjectMode": true
   }
 }
 ```
-
-`firestore.rules` (스펙 §4 보안 규칙):
-```
-rules_version = '2';
-service cloud.firestore {
-  match /databases/{database}/documents {
-    function signedIn() { return request.auth != null; }
-
-    match /users/{uid} {
-      allow read: if signedIn();
-      allow write: if false; // setNickname / deleteAccount callable 경유
-    }
-    match /cells/{cellId} {
-      allow read: if signedIn();
-      allow write: if false; // onCaptureCreated 만
-    }
-    match /nicknames/{lower} {
-      allow read: if signedIn();
-      allow write: if false;
-    }
-    match /captures/{id} {
-      allow create: if signedIn()
-        && request.resource.data.uid == request.auth.uid
-        && request.resource.data.keys().hasOnly(['uid','cell','lat','lng','accuracy','speed','isMock','clientAt','createdAt','status'])
-        && request.resource.data.cell is string
-        && request.resource.data.lat is number && request.resource.data.lng is number
-        && request.resource.data.accuracy is number && request.resource.data.speed is number
-        && request.resource.data.isMock is bool
-        && request.resource.data.status == 'pending';
-      allow read: if signedIn() && resource.data.uid == request.auth.uid;
-      allow update, delete: if false;
-    }
-  }
-}
-```
-
-`firestore.indexes.json`:
-```json
-{
-  "indexes": [
-    { "collectionGroup": "captures", "queryScope": "COLLECTION",
-      "fields": [ { "fieldPath": "uid", "order": "ASCENDING" }, { "fieldPath": "status", "order": "ASCENDING" }, { "fieldPath": "createdAt", "order": "DESCENDING" } ] },
-    { "collectionGroup": "cells", "queryScope": "COLLECTION",
-      "fields": [ { "fieldPath": "region", "order": "ASCENDING" }, { "fieldPath": "capturedAt", "order": "DESCENDING" } ] }
-  ],
-  "fieldOverrides": []
-}
-```
-
-규칙 배포:
 ```bash
+firebase login:list
+firebase use --add    # eat-the-land 선택, alias default
 firebase deploy --only firestore:rules,firestore:indexes 2>&1 | tail -3
 ```
-Expected: `Deploy complete!`
+Expected: `Deploy complete!` (규칙 내용은 Task 4 에서 교체 후 다시 배포한다)
 
 - [ ] **Step 5: 빌드·기동 확인**
 
 ```bash
-./gradlew assembleDebug --no-daemon 2>&1 | tail -3
-./gradlew installDebug --no-daemon 2>&1 | tail -2
-adb logcat -c && adb shell am start -n com.jaychoi.eattheland.debug/com.jaychoi.eattheland.MainActivity && sleep 3 && adb logcat -d | grep -iE "FirebaseApp|FirebaseInit" | head -5
+./gradlew assembleDebug installDebug --no-daemon 2>&1 | tail -3
+adb logcat -c && adb shell am start -n com.jaychoi.eattheland.debug/com.jaychoi.eattheland.MainActivity && sleep 3 && adb logcat -d | grep -iE "FirebaseApp|FirebaseInit|AndroidRuntime" | head -5
 ```
-Expected: `FirebaseApp: Device unlocked: initializing all Firebase APIs` 류 로그가 있고 크래시 없음. `Default FirebaseApp is not initialized` 가 보이면 매니페스트 provider 블록의 authorities 오타를 확인.
+Expected: `FirebaseApp` 초기화 로그, 크래시 없음.
 
-- [ ] **Step 6: 커밋 (google-services.json 은 무시됨을 확인)**
+- [ ] **Step 6: 커밋**
 
 ```bash
-git status --short | grep google-services && echo "!! 커밋 금지 파일이 스테이징됨" || echo ok
+git status --short | grep google-services && echo "!! 커밋 금지 파일" || echo ok
 git add -A && git commit -m "$(cat <<'EOF'
-9/23 Firebase 연결 (App Startup 초기화, Firestore 보안 규칙·인덱스, 에뮬레이터 설정)
+9/23 Firebase 연결 (App Startup 초기화, CLI 프로젝트 alias, functions 설정 제거)
 
 Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>
 EOF
@@ -739,43 +664,36 @@ EOF
 
 ---
 
-### Task 4: Cloud Functions `setNickname` (TypeScript + 에뮬레이터 테스트)
+### Task 4: Firestore 보안 규칙 (서버 판정 대체) + 규칙 단위 테스트, functions 제거
 
 **Files:**
-- Create: `functions/package.json`, `functions/tsconfig.json`, `functions/.eslintrc.js`, `functions/jest.config.js`, `functions/src/index.ts`, `functions/src/nickname.ts`, `functions/src/setNickname.ts`, `functions/test/setNickname.test.ts`
+- Delete: `functions/**` (Task 4 v1 산출물 — Spark 에서 배포 불가)
+- Create: `rules/package.json`, `rules/jest.config.js`, `rules/test/firestore.rules.test.ts`
+- Rewrite: `firestore.rules`, `firestore.indexes.json`
+- Modify: `.gitignore` (`functions/` 항목 → `rules/node_modules/`)
 
 **Interfaces:**
-- Produces: callable `setNickname({ nickname: string }) → { nickname, color }`. 에러 코드: `invalid-argument`(형식), `already-exists`(중복), `unauthenticated`. 최초 생성 시 `users/{uid} = { nickname, nicknameLower, color, cellCount: 0, createdAt }`, `nicknames/{lower} = { uid }`. 닉네임 변경 시 옛 `nicknames` 문서 삭제
-- Produces: `isValidNickname(s): boolean` — `^[가-힣a-zA-Z0-9]{2,12}$` (클라 `ValidateNicknameUseCase`와 같은 규칙)
+- Produces: 스펙 §4 규칙 그대로. 클라 계약: `users` create 는 `createdAt = serverTimestamp()`·`cellCount = 0`, `nicknames/{lower}` 는 create-only, `cells` write 는 `capturedAt = serverTimestamp()`
 
-- [ ] **Step 1: functions 프로젝트 골격**
+- [ ] **Step 1: functions 제거 + rules 프로젝트 골격**
 
 ```bash
-mkdir -p functions/src functions/test && cd functions
+cd ~/StudioProjects/Eat-the-land
+git rm -rq functions && rm -rf functions
+sed -i 's#^functions/node_modules/$#rules/node_modules/#; /^functions\/lib\/$/d' .gitignore
+mkdir -p rules/test && cd rules
 ```
-`functions/package.json`:
+`rules/package.json`:
 ```json
 {
-  "name": "eat-the-land-functions",
+  "name": "eat-the-land-rules",
   "private": true,
-  "engines": { "node": "20" },
-  "main": "lib/index.js",
   "scripts": {
-    "build": "tsc",
-    "lint": "eslint --ext .ts src test",
-    "test": "firebase emulators:exec --only functions,firestore,auth --project eat-the-land \"jest --runInBand\"",
-    "serve": "npm run build && firebase emulators:start --only functions,firestore,auth"
-  },
-  "dependencies": {
-    "firebase-admin": "^13.0.0",
-    "firebase-functions": "^6.0.0",
-    "h3-js": "^4.2.0"
+    "test": "firebase emulators:exec --only firestore --project demo-eat-the-land \"jest --runInBand\""
   },
   "devDependencies": {
+    "@firebase/rules-unit-testing": "^4.0.0",
     "@types/jest": "^29.5.0",
-    "@typescript-eslint/eslint-plugin": "^8.0.0",
-    "@typescript-eslint/parser": "^8.0.0",
-    "eslint": "^8.57.0",
     "firebase": "^11.0.0",
     "jest": "^29.7.0",
     "ts-jest": "^29.2.0",
@@ -783,180 +701,148 @@ mkdir -p functions/src functions/test && cd functions
   }
 }
 ```
-`functions/tsconfig.json`:
-```json
-{
-  "compilerOptions": { "module": "commonjs", "target": "es2022", "strict": true, "esModuleInterop": true,
-                       "outDir": "lib", "sourceMap": true, "skipLibCheck": true },
-  "include": ["src"]
-}
-```
-`functions/jest.config.js`:
+`rules/jest.config.js`:
 ```js
 module.exports = { preset: 'ts-jest', testEnvironment: 'node', testTimeout: 20000 };
 ```
-`functions/.eslintrc.js`:
-```js
-module.exports = {
-  root: true, parser: '@typescript-eslint/parser', plugins: ['@typescript-eslint'],
-  extends: ['eslint:recommended', 'plugin:@typescript-eslint/recommended'],
-  env: { node: true, es2022: true, jest: true },
-};
+`rules/tsconfig.json`:
+```json
+{ "compilerOptions": { "module": "commonjs", "target": "es2022", "strict": true, "esModuleInterop": true, "skipLibCheck": true } }
 ```
 ```bash
-npm install 2>&1 | tail -2
+npm install 2>&1 | tail -1
 ```
 
-- [ ] **Step 2: 닉네임 규칙 순수 함수 + 실패 테스트**
+- [ ] **Step 2: 규칙 테스트 (RED — 현재 규칙은 users/cells 쓰기 전면 금지라 허용 케이스가 실패한다)**
 
-`functions/src/nickname.ts`:
+`rules/test/firestore.rules.test.ts`:
 ```ts
-export const NICKNAME_RE = /^[가-힣a-zA-Z0-9]{2,12}$/;
-export const COLOR_COUNT = 7;
+import { readFileSync } from 'fs';
+import { resolve } from 'path';
+import {
+  assertFails, assertSucceeds, initializeTestEnvironment, RulesTestEnvironment,
+} from '@firebase/rules-unit-testing';
+import { deleteDoc, doc, serverTimestamp, setDoc, updateDoc, Timestamp } from 'firebase/firestore';
 
-export function isValidNickname(s: unknown): s is string {
-  return typeof s === 'string' && NICKNAME_RE.test(s);
+let env: RulesTestEnvironment;
+const rules = readFileSync(resolve(__dirname, '../../firestore.rules'), 'utf8');
+
+beforeAll(async () => {
+  env = await initializeTestEnvironment({
+    projectId: 'demo-eat-the-land',
+    firestore: { rules, host: '127.0.0.1', port: 8080 },
+  });
+});
+afterAll(() => env.cleanup());
+beforeEach(() => env.clearFirestore());
+
+const alice = () => env.authenticatedContext('alice').firestore();
+const bob = () => env.authenticatedContext('bob').firestore();
+const anon = () => env.unauthenticatedContext().firestore();
+
+const profile = (over: Record<string, unknown> = {}) => ({
+  nickname: '땅주인', nicknameLower: '땅주인', color: 3, cellCount: 0, createdAt: serverTimestamp(), ...over,
+});
+
+async function seedUser(uid: string, over: Record<string, unknown> = {}) {
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(doc(ctx.firestore(), 'users', uid), { ...profile({ nickname: uid, nicknameLower: uid }), createdAt: Timestamp.now(), ...over });
+  });
 }
-```
-`functions/test/nickname.test.ts`:
-```ts
-import { isValidNickname } from '../src/nickname';
 
-test('한글·영문·숫자 2~12자만 허용', () => {
-  expect(isValidNickname('땅주인')).toBe(true);
-  expect(isValidNickname('ab')).toBe(true);
-  expect(isValidNickname('a')).toBe(false);
-  expect(isValidNickname('열세글자넘는닉네임입니다요')).toBe(false);
-  expect(isValidNickname('공백 있음')).toBe(false);
-  expect(isValidNickname(null)).toBe(false);
-});
-```
-```bash
-npx jest test/nickname.test.ts 2>&1 | tail -5
-```
-Expected: PASS 1.
-
-- [ ] **Step 3: `setNickname` 에뮬레이터 통합 테스트 (실패 확인)**
-
-`functions/test/setNickname.test.ts`:
-```ts
-import { initializeApp } from 'firebase/app';
-import { connectAuthEmulator, getAuth, signInAnonymously } from 'firebase/auth';
-import { connectFunctionsEmulator, getFunctions, httpsCallable } from 'firebase/functions';
-import { connectFirestoreEmulator, doc, getDoc, getFirestore } from 'firebase/firestore';
-
-const app = initializeApp({ projectId: 'eat-the-land', apiKey: 'fake', appId: 'fake' });
-const auth = getAuth(app); connectAuthEmulator(auth, 'http://127.0.0.1:9099', { disableWarnings: true });
-const fns = getFunctions(app, 'asia-northeast3'); connectFunctionsEmulator(fns, '127.0.0.1', 5001);
-const db = getFirestore(app); connectFirestoreEmulator(db, '127.0.0.1', 8080);
-const setNickname = httpsCallable<{ nickname: string }, { nickname: string; color: number }>(fns, 'setNickname');
-
-async function freshUser() { await auth.signOut(); const c = await signInAnonymously(auth); return c.user.uid; }
-
-test('최초 설정: users·nicknames 문서가 생기고 color 는 0..6', async () => {
-  const uid = await freshUser();
-  const nick = 'u' + uid.slice(0, 8);
-  const res = await setNickname({ nickname: nick });
-  expect(res.data.nickname).toBe(nick);
-  expect(res.data.color).toBeGreaterThanOrEqual(0);
-  expect(res.data.color).toBeLessThan(7);
-  const user = await getDoc(doc(db, 'users', uid));
-  expect(user.data()).toMatchObject({ nickname: nick, nicknameLower: nick.toLowerCase(), cellCount: 0 });
-  expect((await getDoc(doc(db, 'nicknames', nick.toLowerCase()))).data()).toEqual({ uid });
+describe('users', () => {
+  test('본인이 유효한 프로필을 만들 수 있다', async () => {
+    await assertSucceeds(setDoc(doc(alice(), 'users/alice'), profile()));
+  });
+  test('비로그인·타인 uid·잘못된 닉네임·lower 불일치·색 범위·cellCount≠0·createdAt≠서버시각 은 거부', async () => {
+    await assertFails(setDoc(doc(anon(), 'users/alice'), profile()));
+    await assertFails(setDoc(doc(bob(), 'users/alice'), profile()));
+    await assertFails(setDoc(doc(alice(), 'users/alice'), profile({ nickname: 'a' })));
+    await assertFails(setDoc(doc(alice(), 'users/alice'), profile({ nickname: 'Walker', nicknameLower: 'Walker' })));
+    await assertFails(setDoc(doc(alice(), 'users/alice'), profile({ color: 7 })));
+    await assertFails(setDoc(doc(alice(), 'users/alice'), profile({ cellCount: 1 })));
+    await assertFails(setDoc(doc(alice(), 'users/alice'), profile({ createdAt: Timestamp.now() })));
+  });
+  test('닉네임 변경은 본인만, 다른 필드는 못 건드린다', async () => {
+    await seedUser('alice');
+    await assertSucceeds(updateDoc(doc(alice(), 'users/alice'), { nickname: '새이름', nicknameLower: '새이름' }));
+    await assertFails(updateDoc(doc(bob(), 'users/alice'), { nickname: '해킹', nicknameLower: '해킹' }));
+    await assertFails(updateDoc(doc(alice(), 'users/alice'), { color: 1 }));
+  });
+  test('cellCount 는 누구나 정확히 ±1 만', async () => {
+    await seedUser('alice', { cellCount: 5 });
+    await assertSucceeds(updateDoc(doc(bob(), 'users/alice'), { cellCount: 4 }));
+    await assertSucceeds(updateDoc(doc(bob(), 'users/alice'), { cellCount: 5 }));
+    await assertFails(updateDoc(doc(bob(), 'users/alice'), { cellCount: 7 }));
+    await assertFails(updateDoc(doc(bob(), 'users/alice'), { cellCount: 5, color: 2 }));
+    await seedUser('carol', { cellCount: 0 });
+    await assertFails(updateDoc(doc(bob(), 'users/carol'), { cellCount: -1 }));
+  });
+  test('삭제는 본인만', async () => {
+    await seedUser('alice');
+    await assertFails(deleteDoc(doc(bob(), 'users/alice')));
+    await assertSucceeds(deleteDoc(doc(alice(), 'users/alice')));
+  });
 });
 
-test('중복 닉네임은 already-exists (대소문자 무시)', async () => {
-  const a = await freshUser();
-  const nick = 'Dup' + a.slice(0, 6);
-  await setNickname({ nickname: nick });
-  await freshUser();
-  await expect(setNickname({ nickname: nick.toUpperCase() })).rejects.toMatchObject({ code: 'functions/already-exists' });
+describe('nicknames', () => {
+  test('생성은 본인 uid 로만, 이미 있으면 거부(유일성)', async () => {
+    await assertSucceeds(setDoc(doc(alice(), 'nicknames/땅주인'), { uid: 'alice' }));
+    await assertFails(setDoc(doc(bob(), 'nicknames/땅주인'), { uid: 'bob' }));
+    await assertFails(setDoc(doc(bob(), 'nicknames/다른이름'), { uid: 'alice' }));
+  });
+  test('삭제는 소유자만', async () => {
+    await assertSucceeds(setDoc(doc(alice(), 'nicknames/땅주인'), { uid: 'alice' }));
+    await assertFails(deleteDoc(doc(bob(), 'nicknames/땅주인')));
+    await assertSucceeds(deleteDoc(doc(alice(), 'nicknames/땅주인')));
+  });
 });
 
-test('형식 위반은 invalid-argument', async () => {
-  await freshUser();
-  await expect(setNickname({ nickname: 'a' })).rejects.toMatchObject({ code: 'functions/invalid-argument' });
-});
-
-test('변경 시 옛 nicknames 문서는 사라진다', async () => {
-  const uid = await freshUser();
-  const first = 'f' + uid.slice(0, 8); const second = 's' + uid.slice(0, 8);
-  await setNickname({ nickname: first });
-  await setNickname({ nickname: second });
-  expect((await getDoc(doc(db, 'nicknames', first.toLowerCase()))).exists()).toBe(false);
-  expect((await getDoc(doc(db, 'users', uid))).data()?.nickname).toBe(second);
-});
-```
-```bash
-npm test 2>&1 | tail -15
-```
-Expected: 에뮬레이터가 뜨고 4개 FAIL (함수 없음 → `functions/not-found`).
-
-- [ ] **Step 4: 구현**
-
-`functions/src/setNickname.ts`:
-```ts
-import { getFirestore, FieldValue } from 'firebase-admin/firestore';
-import { HttpsError, onCall } from 'firebase-functions/v2/https';
-import { COLOR_COUNT, isValidNickname } from './nickname';
-
-export const setNickname = onCall({ region: 'asia-northeast3' }, async (req) => {
-  const uid = req.auth?.uid;
-  if (!uid) throw new HttpsError('unauthenticated', '로그인이 필요합니다');
-  const nickname = req.data?.nickname;
-  if (!isValidNickname(nickname)) throw new HttpsError('invalid-argument', '닉네임은 한글·영문·숫자 2~12자');
-  const lower = nickname.toLowerCase();
-  const db = getFirestore();
-
-  return db.runTransaction(async (tx) => {
-    const nickRef = db.doc(`nicknames/${lower}`);
-    const userRef = db.doc(`users/${uid}`);
-    const counterRef = db.doc(`meta/counters`);
-    const [nickSnap, userSnap, counterSnap] = await Promise.all([tx.get(nickRef), tx.get(userRef), tx.get(counterRef)]);
-
-    if (nickSnap.exists && nickSnap.data()?.uid !== uid) throw new HttpsError('already-exists', '이미 사용 중인 닉네임');
-
-    let color: number;
-    if (userSnap.exists) {
-      color = userSnap.data()!.color as number;
-      const oldLower = userSnap.data()!.nicknameLower as string;
-      if (oldLower !== lower) tx.delete(db.doc(`nicknames/${oldLower}`));
-      tx.update(userRef, { nickname, nicknameLower: lower });
-    } else {
-      const seq = (counterSnap.data()?.users as number | undefined) ?? 0;
-      color = seq % COLOR_COUNT;
-      tx.set(counterRef, { users: seq + 1 }, { merge: true });
-      tx.set(userRef, { nickname, nicknameLower: lower, color, cellCount: 0, createdAt: FieldValue.serverTimestamp() });
-    }
-    tx.set(nickRef, { uid });
-    return { nickname, color };
+describe('cells', () => {
+  const cell = (uid: string, over: Record<string, unknown> = {}) => ({
+    ownerUid: uid, ownerColor: 2, capturedAt: serverTimestamp(), region: '872ab', ...over,
+  });
+  test('본인 소유로 생성·뺏기(update) 가능, 타인 uid·클라 시각·삭제는 거부', async () => {
+    await assertSucceeds(setDoc(doc(alice(), 'cells/8b2a'), cell('alice')));
+    await assertSucceeds(setDoc(doc(bob(), 'cells/8b2a'), cell('bob')));
+    await assertFails(setDoc(doc(bob(), 'cells/8b2b'), cell('alice')));
+    await assertFails(setDoc(doc(bob(), 'cells/8b2c'), cell('bob', { capturedAt: Timestamp.now() })));
+    await assertFails(setDoc(doc(bob(), 'cells/8b2d'), cell('bob', { extra: 1 })));
+    await assertFails(deleteDoc(doc(bob(), 'cells/8b2a')));
+    await assertFails(setDoc(doc(anon(), 'cells/8b2e'), cell('anon')));
   });
 });
 ```
-`functions/src/index.ts`:
-```ts
-import { initializeApp } from 'firebase-admin/app';
-initializeApp();
-export { setNickname } from './setNickname';
+```bash
+npm test 2>&1 | grep -E "Tests:|✓|✕" | head -12
+```
+Expected: `Tests: N failed` — 허용 케이스(users 생성, 닉네임 변경, ±1, nicknames 생성, cells 생성)가 실패.
+
+- [ ] **Step 3: 규칙 교체 (GREEN)**
+
+`firestore.rules` 를 스펙 §4 블록으로 교체 (정본은 스펙, 그대로 복사). `firestore.indexes.json` 은 captures 인덱스를 지우고 cells 만:
+```json
+{
+  "indexes": [
+    { "collectionGroup": "cells", "queryScope": "COLLECTION",
+      "fields": [ { "fieldPath": "region", "order": "ASCENDING" }, { "fieldPath": "capturedAt", "order": "DESCENDING" } ] },
+    { "collectionGroup": "users", "queryScope": "COLLECTION",
+      "fields": [ { "fieldPath": "cellCount", "order": "DESCENDING" }, { "fieldPath": "createdAt", "order": "ASCENDING" } ] }
+  ],
+  "fieldOverrides": []
+}
 ```
 ```bash
-npm run build 2>&1 | tail -3 && npm test 2>&1 | tail -12
+npm test 2>&1 | grep -E "Tests:" ; cd .. && firebase deploy --only firestore:rules,firestore:indexes 2>&1 | tail -2
 ```
-Expected: `Tests: 5 passed`. (`meta/counters` 는 서버만 쓰는 문서라 규칙 추가 불필요 — Admin SDK는 규칙을 우회한다.)
+Expected: `Tests: 8 passed, 8 total`, `Deploy complete!`
 
-- [ ] **Step 5: 배포**
+- [ ] **Step 4: 커밋**
 
 ```bash
-cd ~/StudioProjects/Eat-the-land && firebase deploy --only functions 2>&1 | tail -5
-```
-Expected: `✔ functions[setNickname(asia-northeast3)] Successful create operation.`
-
-- [ ] **Step 6: 커밋**
-
-```bash
-git add -A && git status --short | grep -E "node_modules|/lib/" && echo "!! 무시 실패" || true
+git add -A && git status --short | grep -E "node_modules" && echo "!! 무시 실패" || true
 git commit -m "$(cat <<'EOF'
-9/23 Cloud Functions setNickname (닉네임 유일성 트랜잭션·색 배정, 에뮬레이터 테스트 5건)
+9/23 Firestore 보안 규칙으로 서버 판정 대체 (users·nicknames·cells, 규칙 테스트 8건), Cloud Functions 제거
 
 Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>
 EOF
@@ -968,35 +854,29 @@ EOF
 ### Task 5: `:core:network` Firebase 데이터소스 + `:core:data` PlayerRepository + `:core:domain` ValidateNicknameUseCase
 
 **Files:**
-- Create: `core/network/build.gradle.kts`, `core/network/src/main/kotlin/com/jaychoi/eattheland/core/network/{AuthDataSource,FirebaseAuthDataSource,UserDataSource,FirestoreUserDataSource,UserDto,NicknameFunctionsDataSource}.kt`, `core/network/src/main/kotlin/com/jaychoi/eattheland/core/network/di/NetworkModule.kt`
-- Create: `core/data/build.gradle.kts`, `core/data/src/main/kotlin/com/jaychoi/eattheland/core/data/{PlayerRepository,DefaultPlayerRepository}.kt`, `core/data/src/main/kotlin/com/jaychoi/eattheland/core/data/di/DataModule.kt`, `core/data/src/test/kotlin/com/jaychoi/eattheland/core/data/DefaultPlayerRepositoryTest.kt`
-- Create: `core/domain/build.gradle.kts`, `core/domain/src/main/kotlin/com/jaychoi/eattheland/core/domain/ValidateNicknameUseCase.kt`, `core/domain/src/test/kotlin/com/jaychoi/eattheland/core/domain/ValidateNicknameUseCaseTest.kt`
-- Create: `core/testing/src/main/kotlin/com/jaychoi/eattheland/core/testing/{FakeAuthDataSource,FakeUserDataSource,FakeNicknameFunctionsDataSource,FakePlayerRepository}.kt`
-- Modify: `settings.gradle.kts`, `core/testing/build.gradle.kts`
+- Create: `core/network/build.gradle.kts`, `core/network/src/main/kotlin/com/jaychoi/eattheland/core/network/{DataSourceException,AuthDataSource,FirebaseAuthDataSource,UserDataSource,FirestoreUserDataSource,NicknameDataSource,FirestoreNicknameDataSource}.kt`, `.../network/di/NetworkModule.kt`
+- Create: `core/data/build.gradle.kts`, `core/data/src/main/kotlin/com/jaychoi/eattheland/core/data/{PlayerRepository,DefaultPlayerRepository}.kt`, `.../data/di/DataModule.kt`, `core/data/src/test/.../DefaultPlayerRepositoryTest.kt`
+- Create: `core/domain/build.gradle.kts`, `.../domain/ValidateNicknameUseCase.kt`, `.../domain/ValidateNicknameUseCaseTest.kt`
+- Create: `core/testing/.../{FakeAuthDataSource,FakeUserDataSource,FakeNicknameDataSource,FakePlayerRepository}.kt`
+- Modify: `settings.gradle.kts`, `gradle/libs.versions.toml`, `core/testing/build.gradle.kts`
 
 **Interfaces:**
 - Produces (`core.network`):
+  - `class DataSourceException(val kind: Kind, cause: Throwable? = null) : Exception(cause) { enum class Kind { NicknameTaken, Offline, PermissionDenied, Unknown } }` — 데이터소스가 던지는 유일한 예외
   - `interface AuthDataSource { val uid: Flow<String?>; suspend fun ensureSignedIn(): String }`
-  - `data class UserDto(val nickname: String? = null, val nicknameLower: String? = null, val color: Long? = null, val cellCount: Long? = null)`
-  - `interface UserDataSource { fun observe(uid: String): Flow<UserDto?> }`
-  - `interface NicknameFunctionsDataSource { suspend fun setNickname(nickname: String): Unit }` — 실패는 `FirebaseFunctionsException` 그대로 던진다
-- Produces (`core.data`):
-  - `interface PlayerRepository { val currentPlayer: Flow<Player?>; suspend fun ensureSignedIn(): PlayerError?; suspend fun setNickname(nickname: String): PlayerError? }` — `currentPlayer`는 로그인 전 `null`, 로그인 후 users 문서 없으면 `null`, 있으면 `Player`
-- Produces (`core.domain`): `class ValidateNicknameUseCase { operator fun invoke(nickname: String): Boolean }`
-- Produces (`core.testing`): `FakePlayerRepository` with `val playerFlow = MutableStateFlow<Player?>(null)`, `var signInError: PlayerError? = null`, `var setNicknameError: PlayerError? = null`, `val setNicknameCalls = mutableListOf<String>()`
+  - `data class UserDto(nickname, nicknameLower, color: Long?, cellCount: Long?)`; `interface UserDataSource { fun observe(uid): Flow<UserDto?> }`
+  - `interface NicknameDataSource { suspend fun setNickname(uid: String, nickname: String, colorIfNew: Int) }` — 트랜잭션. 중복이면 `DataSourceException(NicknameTaken)`
+- Produces (`core.data`): `interface PlayerRepository { val currentPlayer: Flow<Player?>; suspend fun ensureSignedIn(): PlayerError?; suspend fun setNickname(nickname: String): PlayerError? }`
+- Produces (`core.domain`): `ValidateNicknameUseCase`
+- Produces (`core.testing`): `FakePlayerRepository { playerFlow, signInError, setNicknameError, setNicknameCalls }`, `FakeAuthDataSource(initialUid) { uid: MutableStateFlow, failSignIn }`, `FakeUserDataSource { users: MutableStateFlow<Map<String, UserDto>> }`, `FakeNicknameDataSource { calls: List<Triple<uid, nickname, color>>, error: DataSourceException? }`
 
-- [ ] **Step 1: 모듈 3개 등록**
+- [ ] **Step 1: 모듈 3개 등록 + 빌드 파일** — (v1 과 동일, `core/data` 에서 firebase 의존 제거)
 
-`settings.gradle.kts` 에 추가:
-```kotlin
-include(":core:network")
-include(":core:data")
-include(":core:domain")
-```
+`settings.gradle.kts` 에 `include(":core:network")`, `include(":core:data")`, `include(":core:domain")`.
 
 `core/network/build.gradle.kts`:
 ```kotlin
-// :core:network — Firebase 원격 I/O. model·common 만 본다 (R-10 의존 표).
+// :core:network — Firebase 원격 I/O. model·common 만 본다 (R-10 의존 표). Firebase 예외는 여기서 DataSourceException 으로 바꾼다.
 plugins {
     alias(libs.plugins.convention.android.library)
     alias(libs.plugins.convention.android.hilt)
@@ -1012,15 +892,14 @@ dependencies {
     implementation(platform(libs.firebase.bom))
     implementation(libs.firebase.auth)
     implementation(libs.firebase.firestore)
-    implementation(libs.firebase.functions)
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.kotlinx.coroutines.play.services)
+    testImplementation(libs.junit4)
 }
 ```
-
 `core/data/build.gradle.kts`:
 ```kotlin
-// :core:data — Repository 인터페이스+구현 (R-11-02).
+// :core:data — Repository 인터페이스+구현 (R-11-02). Firebase 타입을 import 하지 않는다(스펙 §3 예외 규약).
 plugins {
     alias(libs.plugins.convention.android.library)
     alias(libs.plugins.convention.android.hilt)
@@ -1035,15 +914,12 @@ dependencies {
     implementation(projects.core.common)
     implementation(projects.core.network)
     implementation(libs.kotlinx.coroutines.android)
-    implementation(platform(libs.firebase.bom))
-    implementation(libs.firebase.functions) // FirebaseFunctionsException 코드 매핑
     testImplementation(projects.core.testing)
     testImplementation(libs.junit4)
     testImplementation(libs.kotlinx.coroutines.test)
     testImplementation(libs.turbine)
 }
 ```
-
 `core/domain/build.gradle.kts`:
 ```kotlin
 // :core:domain — UseCase. Android 타입 참조 없음 (R-16-05). JVM 모듈.
@@ -1061,97 +937,30 @@ dependencies {
     testImplementation(libs.junit4)
 }
 ```
-`gradle/libs.versions.toml` `[versions]` 에 `javaxInject = "1"`, `[libraries]` 에:
-```toml
-javax-inject = { group = "javax.inject", name = "javax.inject", version.ref = "javaxInject" }
-```
+카탈로그: `[versions]` `javaxInject = "1"`, `[libraries]` `javax-inject = { group = "javax.inject", name = "javax.inject", version.ref = "javaxInject" }`.
+`core/testing/build.gradle.kts` `dependencies` 에 `implementation(projects.core.network)`, `implementation(projects.core.data)`, `implementation(libs.kotlinx.coroutines.android)`.
 
-`core/testing/build.gradle.kts` `dependencies` 에 추가:
-```kotlin
-    implementation(projects.core.network)
-    implementation(projects.core.data)
-    implementation(libs.kotlinx.coroutines.android)
-```
+- [ ] **Step 2: `ValidateNicknameUseCase` 테스트 → 실패 확인 → 구현 → 통과** — v1 Task 5 Step 2~3 과 동일 (테스트 2개, 정규식 `^[가-힣a-zA-Z0-9]{2,12}$`).
 
-- [ ] **Step 2: `ValidateNicknameUseCase` — 테스트 먼저**
+- [ ] **Step 3: 예외 타입 + 네트워크 인터페이스 + Firebase 구현**
 
-`core/domain/src/test/kotlin/com/jaychoi/eattheland/core/domain/ValidateNicknameUseCaseTest.kt`:
-```kotlin
-package com.jaychoi.eattheland.core.domain
-
-import org.junit.Assert.assertFalse
-import org.junit.Assert.assertTrue
-import org.junit.Test
-
-class ValidateNicknameUseCaseTest {
-    private val validate = ValidateNicknameUseCase()
-
-    @Test
-    fun `한글 영문 숫자 2~12자는 통과`() {
-        assertTrue(validate("땅주인"))
-        assertTrue(validate("ab"))
-        assertTrue(validate("Walker2026"))
-    }
-
-    @Test
-    fun `길이 위반과 특수문자 공백은 실패`() {
-        assertFalse(validate("a"))
-        assertFalse(validate("열세글자넘는닉네임입니다요"))
-        assertFalse(validate("공백 있음"))
-        assertFalse(validate("emoji🙂"))
-        assertFalse(validate(""))
-    }
-}
-```
-```bash
-./gradlew :core:domain:test --no-daemon 2>&1 | grep -E "error:|BUILD" | head -3
-```
-Expected: 컴파일 실패 (`ValidateNicknameUseCase` 없음).
-
-- [ ] **Step 3: 구현**
-
-`core/domain/src/main/kotlin/com/jaychoi/eattheland/core/domain/ValidateNicknameUseCase.kt`:
-```kotlin
-package com.jaychoi.eattheland.core.domain
-
-import javax.inject.Inject
-
-/** 서버 `functions/src/nickname.ts` 의 NICKNAME_RE 와 같은 규칙. 온보딩·설정 두 화면이 쓴다 (R-16-07). */
-class ValidateNicknameUseCase @Inject constructor() {
-    operator fun invoke(nickname: String): Boolean = NICKNAME_REGEX.matches(nickname)
-
-    private companion object {
-        val NICKNAME_REGEX = Regex("^[가-힣a-zA-Z0-9]{2,12}$")
-    }
-}
-```
-```bash
-./gradlew :core:domain:test --no-daemon 2>&1 | grep -E "FAILED|BUILD" | head -3
-```
-Expected: `BUILD SUCCESSFUL`.
-
-- [ ] **Step 4: 네트워크 인터페이스 + Firebase 구현**
-
-`core/network/src/main/kotlin/com/jaychoi/eattheland/core/network/AuthDataSource.kt`:
+`DataSourceException.kt`:
 ```kotlin
 package com.jaychoi.eattheland.core.network
 
-import kotlinx.coroutines.flow.Flow
-
-interface AuthDataSource {
-    /** 현재 uid. 로그아웃/미로그인이면 null. */
-    val uid: Flow<String?>
-
-    /** 익명 로그인을 보장하고 uid 를 돌려준다. 실패는 예외로 던진다(Repository 가 잡는다). */
-    suspend fun ensureSignedIn(): String
+/** 데이터소스가 던지는 유일한 예외. Firebase 예외는 여기로 변환돼 :core:data 가 Firebase 타입을 모르게 한다. */
+class DataSourceException(val kind: Kind, cause: Throwable? = null) : Exception(kind.name, cause) {
+    enum class Kind { NicknameTaken, Offline, PermissionDenied, Unknown }
 }
 ```
+`AuthDataSource.kt`·`UserDataSource.kt`·`FirestoreUserDataSource.kt`: v1 과 동일.
 
 `FirebaseAuthDataSource.kt`:
 ```kotlin
 package com.jaychoi.eattheland.core.network
 
 import com.google.firebase.Firebase
+import com.google.firebase.FirebaseNetworkException
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.auth
 import javax.inject.Inject
@@ -1169,118 +978,101 @@ class FirebaseAuthDataSource @Inject constructor() : AuthDataSource {
         awaitClose { auth.removeAuthStateListener(listener) }
     }
 
+    @Suppress("TooGenericExceptionCaught")
     override suspend fun ensureSignedIn(): String {
         auth.currentUser?.let { return it.uid }
-        val result = auth.signInAnonymously().await()
-        return checkNotNull(result.user).uid
-    }
-}
-```
-
-`UserDataSource.kt`:
-```kotlin
-package com.jaychoi.eattheland.core.network
-
-import kotlinx.coroutines.flow.Flow
-
-/** Firestore `users/{uid}` 문서. 필드는 전부 nullable — 서버 스키마 변경에 파싱이 죽지 않게 한다. */
-data class UserDto(
-    val nickname: String? = null,
-    val nicknameLower: String? = null,
-    val color: Long? = null,
-    val cellCount: Long? = null,
-)
-
-interface UserDataSource {
-    /** 문서가 없으면 null 을 흘린다. 스냅샷 에러는 예외로 닫는다. */
-    fun observe(uid: String): Flow<UserDto?>
-}
-```
-
-`FirestoreUserDataSource.kt`:
-```kotlin
-package com.jaychoi.eattheland.core.network
-
-import com.google.firebase.Firebase
-import com.google.firebase.firestore.firestore
-import javax.inject.Inject
-import kotlinx.coroutines.channels.awaitClose
-import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.callbackFlow
-
-class FirestoreUserDataSource @Inject constructor() : UserDataSource {
-    override fun observe(uid: String): Flow<UserDto?> = callbackFlow {
-        val registration = Firebase.firestore.document("users/$uid").addSnapshotListener { snap, error ->
-            if (error != null) {
-                close(error)
-                return@addSnapshotListener
-            }
-            trySend(if (snap != null && snap.exists()) snap.toObject(UserDto::class.java) else null)
+        return try {
+            checkNotNull(auth.signInAnonymously().await().user).uid
+        } catch (e: FirebaseNetworkException) {
+            throw DataSourceException(DataSourceException.Kind.Offline, e)
+        } catch (e: Exception) {
+            throw DataSourceException(DataSourceException.Kind.Unknown, e)
         }
-        awaitClose { registration.remove() }
     }
 }
 ```
+`NicknameDataSource.kt`:
+```kotlin
+package com.jaychoi.eattheland.core.network
 
-`NicknameFunctionsDataSource.kt`:
+interface NicknameDataSource {
+    /**
+     * 스펙 §4 setNickname 트랜잭션. users 가 없으면 colorIfNew 로 생성한다.
+     * 중복이면 DataSourceException(NicknameTaken), 규칙 경합(PERMISSION_DENIED)도 NicknameTaken 으로 본다.
+     */
+    suspend fun setNickname(uid: String, nickname: String, colorIfNew: Int)
+}
+```
+`FirestoreNicknameDataSource.kt`:
 ```kotlin
 package com.jaychoi.eattheland.core.network
 
 import com.google.firebase.Firebase
-import com.google.firebase.functions.functions
+import com.google.firebase.firestore.FieldValue
+import com.google.firebase.firestore.FirebaseFirestoreException
+import com.google.firebase.firestore.firestore
 import javax.inject.Inject
 import kotlinx.coroutines.tasks.await
 
-interface NicknameFunctionsDataSource {
-    /** 실패는 FirebaseFunctionsException 으로 던진다. code: INVALID_ARGUMENT / ALREADY_EXISTS / UNAUTHENTICATED */
-    suspend fun setNickname(nickname: String)
-}
-
-class FirebaseNicknameFunctionsDataSource @Inject constructor() : NicknameFunctionsDataSource {
-    override suspend fun setNickname(nickname: String) {
-        Firebase.functions(REGION).getHttpsCallable("setNickname").call(mapOf("nickname" to nickname)).await()
+class FirestoreNicknameDataSource @Inject constructor() : NicknameDataSource {
+    @Suppress("TooGenericExceptionCaught")
+    override suspend fun setNickname(uid: String, nickname: String, colorIfNew: Int) {
+        val db = Firebase.firestore
+        val lower = nickname.lowercase()
+        try {
+            db.runTransaction { tx ->
+                val nickRef = db.document("nicknames/$lower")
+                val userRef = db.document("users/$uid")
+                val nickSnap = tx.get(nickRef)
+                if (nickSnap.exists() && nickSnap.getString("uid") != uid) throw NicknameTakenSignal()
+                val userSnap = tx.get(userRef)
+                if (userSnap.exists()) {
+                    val oldLower = userSnap.getString("nicknameLower")
+                    if (oldLower != null && oldLower != lower) tx.delete(db.document("nicknames/$oldLower"))
+                    tx.update(userRef, mapOf("nickname" to nickname, "nicknameLower" to lower))
+                } else {
+                    tx.set(
+                        userRef,
+                        mapOf(
+                            "nickname" to nickname, "nicknameLower" to lower, "color" to colorIfNew,
+                            "cellCount" to 0, "createdAt" to FieldValue.serverTimestamp(),
+                        ),
+                    )
+                }
+                tx.set(nickRef, mapOf("uid" to uid))
+            }.await()
+        } catch (e: NicknameTakenSignal) {
+            throw DataSourceException(DataSourceException.Kind.NicknameTaken, e)
+        } catch (e: FirebaseFirestoreException) {
+            throw DataSourceException(
+                when (e.code) {
+                    FirebaseFirestoreException.Code.PERMISSION_DENIED -> DataSourceException.Kind.NicknameTaken
+                    FirebaseFirestoreException.Code.UNAVAILABLE,
+                    FirebaseFirestoreException.Code.DEADLINE_EXCEEDED,
+                    -> DataSourceException.Kind.Offline
+                    else -> DataSourceException.Kind.Unknown
+                },
+                e,
+            )
+        } catch (e: Exception) {
+            throw DataSourceException(DataSourceException.Kind.Unknown, e)
+        }
     }
 
-    private companion object {
-        const val REGION = "asia-northeast3"
-    }
+    /** 트랜잭션 람다 안에서 중복을 알리는 내부 신호. Firestore 는 람다의 예외를 그대로 밖으로 던진다. */
+    private class NicknameTakenSignal : RuntimeException()
 }
 ```
+`di/NetworkModule.kt`: `@Binds` 3개 — `FirebaseAuthDataSource→AuthDataSource`, `FirestoreUserDataSource→UserDataSource`, `FirestoreNicknameDataSource→NicknameDataSource`.
 
-`di/NetworkModule.kt`:
-```kotlin
-package com.jaychoi.eattheland.core.network.di
+- [ ] **Step 4: Fake 3종**
 
-import com.jaychoi.eattheland.core.network.AuthDataSource
-import com.jaychoi.eattheland.core.network.FirebaseAuthDataSource
-import com.jaychoi.eattheland.core.network.FirebaseNicknameFunctionsDataSource
-import com.jaychoi.eattheland.core.network.FirestoreUserDataSource
-import com.jaychoi.eattheland.core.network.NicknameFunctionsDataSource
-import com.jaychoi.eattheland.core.network.UserDataSource
-import dagger.Binds
-import dagger.Module
-import dagger.hilt.InstallIn
-import dagger.hilt.components.SingletonComponent
-
-@Module
-@InstallIn(SingletonComponent::class)
-interface NetworkModule {
-    @Binds fun bindAuth(impl: FirebaseAuthDataSource): AuthDataSource
-
-    @Binds fun bindUser(impl: FirestoreUserDataSource): UserDataSource
-
-    @Binds fun bindNicknameFunctions(impl: FirebaseNicknameFunctionsDataSource): NicknameFunctionsDataSource
-}
-```
-
-- [ ] **Step 5: Fake 3종 (`:core:testing`)**
-
-`FakeAuthDataSource.kt`:
+`FakeAuthDataSource.kt` (v1 과 같되 `IOException` 대신 `DataSourceException(Offline)`):
 ```kotlin
 package com.jaychoi.eattheland.core.testing
 
 import com.jaychoi.eattheland.core.network.AuthDataSource
-import java.io.IOException
+import com.jaychoi.eattheland.core.network.DataSourceException
 import kotlinx.coroutines.flow.MutableStateFlow
 
 class FakeAuthDataSource(initialUid: String? = null) : AuthDataSource {
@@ -1288,95 +1080,66 @@ class FakeAuthDataSource(initialUid: String? = null) : AuthDataSource {
     var failSignIn = false
 
     override suspend fun ensureSignedIn(): String {
-        if (failSignIn) throw IOException("offline")
+        if (failSignIn) throw DataSourceException(DataSourceException.Kind.Offline)
         val id = uid.value ?: "uid-fake"
         uid.value = id
         return id
     }
 }
 ```
-`FakeUserDataSource.kt`:
+`FakeUserDataSource.kt`: v1 과 동일.
+`FakeNicknameDataSource.kt`:
 ```kotlin
 package com.jaychoi.eattheland.core.testing
 
-import com.jaychoi.eattheland.core.network.UserDataSource
-import com.jaychoi.eattheland.core.network.UserDto
-import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.map
+import com.jaychoi.eattheland.core.network.DataSourceException
+import com.jaychoi.eattheland.core.network.NicknameDataSource
 
-class FakeUserDataSource : UserDataSource {
-    val users = MutableStateFlow<Map<String, UserDto>>(emptyMap())
+class FakeNicknameDataSource : NicknameDataSource {
+    val calls = mutableListOf<Triple<String, String, Int>>()
+    var error: DataSourceException? = null
 
-    override fun observe(uid: String): Flow<UserDto?> = users.map { it[uid] }
-}
-```
-`FakeNicknameFunctionsDataSource.kt`:
-```kotlin
-package com.jaychoi.eattheland.core.testing
-
-import com.jaychoi.eattheland.core.network.NicknameFunctionsDataSource
-
-class FakeNicknameFunctionsDataSource : NicknameFunctionsDataSource {
-    val calls = mutableListOf<String>()
-    var error: Throwable? = null
-
-    override suspend fun setNickname(nickname: String) {
-        calls += nickname
+    override suspend fun setNickname(uid: String, nickname: String, colorIfNew: Int) {
+        calls += Triple(uid, nickname, colorIfNew)
         error?.let { throw it }
     }
 }
 ```
 
-- [ ] **Step 6: `PlayerRepository` 인터페이스 + 실패하는 테스트**
+- [ ] **Step 5: `PlayerRepository` + 테스트 (RED)**
 
-`core/data/src/main/kotlin/com/jaychoi/eattheland/core/data/PlayerRepository.kt`:
-```kotlin
-package com.jaychoi.eattheland.core.data
+`PlayerRepository.kt`: v1 과 동일.
 
-import com.jaychoi.eattheland.core.model.Player
-import com.jaychoi.eattheland.core.model.PlayerError
-import kotlinx.coroutines.flow.Flow
-
-interface PlayerRepository {
-    /** 로그인 전·프로필 없음 → null. 온보딩 완료 판정은 "null 이 아닌가"다 (스펙 §5). */
-    val currentPlayer: Flow<Player?>
-
-    /** 익명 로그인 보장. 성공 null, 실패 에러. */
-    suspend fun ensureSignedIn(): PlayerError?
-
-    suspend fun setNickname(nickname: String): PlayerError?
-}
-```
-
-`core/data/src/test/kotlin/com/jaychoi/eattheland/core/data/DefaultPlayerRepositoryTest.kt`:
+`DefaultPlayerRepositoryTest.kt`:
 ```kotlin
 package com.jaychoi.eattheland.core.data
 
 import app.cash.turbine.test
-import com.google.firebase.functions.FirebaseFunctionsException
 import com.jaychoi.eattheland.core.model.Player
 import com.jaychoi.eattheland.core.model.PlayerError
+import com.jaychoi.eattheland.core.network.DataSourceException
 import com.jaychoi.eattheland.core.network.UserDto
 import com.jaychoi.eattheland.core.testing.FakeAuthDataSource
-import com.jaychoi.eattheland.core.testing.FakeNicknameFunctionsDataSource
+import com.jaychoi.eattheland.core.testing.FakeNicknameDataSource
 import com.jaychoi.eattheland.core.testing.FakeUserDataSource
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class DefaultPlayerRepositoryTest {
-    private val auth = FakeAuthDataSource()
+    private val auth = FakeAuthDataSource(initialUid = "u1")
     private val users = FakeUserDataSource()
-    private val functions = FakeNicknameFunctionsDataSource()
+    private val nicknames = FakeNicknameDataSource()
 
-    private fun repo(dispatcher: kotlinx.coroutines.CoroutineDispatcher) =
-        DefaultPlayerRepository(auth, users, functions, dispatcher)
+    private fun repo(dispatcher: CoroutineDispatcher) = DefaultPlayerRepository(auth, users, nicknames, dispatcher)
 
     @Test
     fun `로그인 전에는 null, 로그인 후 문서 없으면 null, 문서 생기면 Player`() = runTest {
+        auth.uid.value = null
         val repo = repo(StandardTestDispatcher(testScheduler))
         repo.currentPlayer.test {
             assertNull(awaitItem())
@@ -1389,24 +1152,38 @@ class DefaultPlayerRepositoryTest {
 
     @Test
     fun `ensureSignedIn 실패는 Network 에러`() = runTest {
+        auth.uid.value = null
         auth.failSignIn = true
         assertEquals(PlayerError.Network, repo(StandardTestDispatcher(testScheduler)).ensureSignedIn())
     }
 
     @Test
-    fun `setNickname 성공은 null 을 돌려주고 함수가 호출된다`() = runTest {
+    fun `setNickname 은 현재 uid 와 uid 기반 색(0..6)으로 데이터소스를 부른다`() = runTest {
         val repo = repo(StandardTestDispatcher(testScheduler))
         assertNull(repo.setNickname("땅주인"))
-        assertEquals(listOf("땅주인"), functions.calls)
+        val (uid, nickname, color) = nicknames.calls.single()
+        assertEquals("u1", uid)
+        assertEquals("땅주인", nickname)
+        assertTrue(color in 0..6)
     }
 
     @Test
-    fun `ALREADY_EXISTS 는 NicknameTaken, INVALID_ARGUMENT 는 InvalidNickname`() = runTest {
+    fun `로그인 전 setNickname 은 Network 에러`() = runTest {
+        auth.uid.value = null
+        auth.failSignIn = true
+        assertEquals(PlayerError.Network, repo(StandardTestDispatcher(testScheduler)).setNickname("땅주인"))
+        assertTrue(nicknames.calls.isEmpty())
+    }
+
+    @Test
+    fun `NicknameTaken 은 NicknameTaken, Offline 은 Network, 그 밖은 Unknown`() = runTest {
         val repo = repo(StandardTestDispatcher(testScheduler))
-        functions.error = FirebaseFunctionsException("dup", FirebaseFunctionsException.Code.ALREADY_EXISTS, null)
+        nicknames.error = DataSourceException(DataSourceException.Kind.NicknameTaken)
         assertEquals(PlayerError.NicknameTaken, repo.setNickname("x1"))
-        functions.error = FirebaseFunctionsException("bad", FirebaseFunctionsException.Code.INVALID_ARGUMENT, null)
-        assertEquals(PlayerError.InvalidNickname, repo.setNickname("x"))
+        nicknames.error = DataSourceException(DataSourceException.Kind.Offline)
+        assertEquals(PlayerError.Network, repo.setNickname("x1"))
+        nicknames.error = DataSourceException(DataSourceException.Kind.Unknown)
+        assertTrue(repo.setNickname("x1") is PlayerError.Unknown)
     }
 }
 ```
@@ -1415,21 +1192,20 @@ class DefaultPlayerRepositoryTest {
 ```
 Expected: 컴파일 실패 (`DefaultPlayerRepository` 없음).
 
-- [ ] **Step 7: 구현 + DI**
+- [ ] **Step 6: 구현 + DI + FakePlayerRepository (GREEN)**
 
-`core/data/src/main/kotlin/com/jaychoi/eattheland/core/data/DefaultPlayerRepository.kt`:
+`DefaultPlayerRepository.kt`:
 ```kotlin
 package com.jaychoi.eattheland.core.data
 
-import com.google.firebase.functions.FirebaseFunctionsException
 import com.jaychoi.eattheland.core.common.IoDispatcher
 import com.jaychoi.eattheland.core.model.Player
 import com.jaychoi.eattheland.core.model.PlayerError
 import com.jaychoi.eattheland.core.network.AuthDataSource
-import com.jaychoi.eattheland.core.network.NicknameFunctionsDataSource
+import com.jaychoi.eattheland.core.network.DataSourceException
+import com.jaychoi.eattheland.core.network.NicknameDataSource
 import com.jaychoi.eattheland.core.network.UserDataSource
 import com.jaychoi.eattheland.core.network.UserDto
-import java.io.IOException
 import javax.inject.Inject
 import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
@@ -1443,7 +1219,7 @@ import kotlinx.coroutines.withContext
 class DefaultPlayerRepository @Inject constructor(
     private val auth: AuthDataSource,
     private val users: UserDataSource,
-    private val functions: NicknameFunctionsDataSource,
+    private val nicknames: NicknameDataSource,
     @IoDispatcher private val io: CoroutineDispatcher,
 ) : PlayerRepository {
 
@@ -1452,109 +1228,61 @@ class DefaultPlayerRepository @Inject constructor(
         if (uid == null) flowOf(null) else users.observe(uid).map { it?.toPlayer(uid) }
     }
 
-    @Suppress("TooGenericExceptionCaught", "SwallowedException")
     override suspend fun ensureSignedIn(): PlayerError? = withContext(io) {
-        try {
-            auth.ensureSignedIn()
-            null
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: IOException) {
-            PlayerError.Network
-        } catch (e: Exception) {
-            PlayerError.Unknown(e)
+        guard { auth.ensureSignedIn() }
+    }
+
+    override suspend fun setNickname(nickname: String): PlayerError? = withContext(io) {
+        guard {
+            val uid = auth.ensureSignedIn()
+            nicknames.setNickname(uid = uid, nickname = nickname, colorIfNew = colorFor(uid))
         }
     }
 
+    /** 스펙 §4: 서버 카운터가 없으므로 uid 해시로 0..6 배정. */
+    private fun colorFor(uid: String): Int = uid.hashCode().mod(COLOR_COUNT)
+
+    // R-23: 데이터 계층 경계에서 모든 실패를 도메인 에러로 바꾼다. 그 변환이 이 함수의 일이다.
     @Suppress("TooGenericExceptionCaught", "SwallowedException")
-    override suspend fun setNickname(nickname: String): PlayerError? = withContext(io) {
-        try {
-            functions.setNickname(nickname)
-            null
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: FirebaseFunctionsException) {
-            when (e.code) {
-                FirebaseFunctionsException.Code.ALREADY_EXISTS -> PlayerError.NicknameTaken
-                FirebaseFunctionsException.Code.INVALID_ARGUMENT -> PlayerError.InvalidNickname
-                FirebaseFunctionsException.Code.UNAVAILABLE,
-                FirebaseFunctionsException.Code.DEADLINE_EXCEEDED,
-                -> PlayerError.Network
-                else -> PlayerError.Unknown(e)
-            }
-        } catch (e: IOException) {
-            PlayerError.Network
-        } catch (e: Exception) {
-            PlayerError.Unknown(e)
+    private inline fun guard(block: () -> Unit): PlayerError? = try {
+        block()
+        null
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: DataSourceException) {
+        when (e.kind) {
+            DataSourceException.Kind.NicknameTaken -> PlayerError.NicknameTaken
+            DataSourceException.Kind.Offline -> PlayerError.Network
+            DataSourceException.Kind.PermissionDenied,
+            DataSourceException.Kind.Unknown,
+            -> PlayerError.Unknown(e)
         }
+    } catch (e: Exception) {
+        PlayerError.Unknown(e)
     }
 
     private fun UserDto.toPlayer(uid: String): Player? {
         val name = nickname ?: return null
         return Player(uid = uid, nickname = name, color = (color ?: 0L).toInt(), cellCount = (cellCount ?: 0L).toInt())
     }
-}
-```
 
-`core/data/src/main/kotlin/com/jaychoi/eattheland/core/data/di/DataModule.kt`:
-```kotlin
-package com.jaychoi.eattheland.core.data.di
-
-import com.jaychoi.eattheland.core.data.DefaultPlayerRepository
-import com.jaychoi.eattheland.core.data.PlayerRepository
-import dagger.Binds
-import dagger.Module
-import dagger.hilt.InstallIn
-import dagger.hilt.components.SingletonComponent
-
-@Module
-@InstallIn(SingletonComponent::class)
-interface DataModule {
-    @Binds fun bindPlayerRepository(impl: DefaultPlayerRepository): PlayerRepository
-}
-```
-
-`core/testing/.../FakePlayerRepository.kt`:
-```kotlin
-package com.jaychoi.eattheland.core.testing
-
-import com.jaychoi.eattheland.core.data.PlayerRepository
-import com.jaychoi.eattheland.core.model.Player
-import com.jaychoi.eattheland.core.model.PlayerError
-import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.MutableStateFlow
-
-class FakePlayerRepository : PlayerRepository {
-    val playerFlow = MutableStateFlow<Player?>(null)
-    var signInError: PlayerError? = null
-    var setNicknameError: PlayerError? = null
-    val setNicknameCalls = mutableListOf<String>()
-
-    override val currentPlayer: Flow<Player?> = playerFlow
-
-    override suspend fun ensureSignedIn(): PlayerError? = signInError
-
-    override suspend fun setNickname(nickname: String): PlayerError? {
-        setNicknameCalls += nickname
-        if (setNicknameError == null) {
-            playerFlow.value = Player(uid = "uid-fake", nickname = nickname, color = 0, cellCount = 0)
-        }
-        return setNicknameError
+    private companion object {
+        const val COLOR_COUNT = 7
     }
 }
 ```
-
+`di/DataModule.kt`: `@Binds fun bindPlayerRepository(impl: DefaultPlayerRepository): PlayerRepository`.
+`FakePlayerRepository.kt`: v1 과 동일.
 ```bash
-./gradlew ktlintFormat :core:data:testDebugUnitTest --no-daemon 2>&1 | grep -E "FAILED|BUILD" | head -5
+./gradlew ktlintFormat :core:data:testDebugUnitTest --no-daemon 2>&1 | grep -E "FAILED|BUILD" | head -3
 ```
-Expected: `BUILD SUCCESSFUL` (4 테스트 통과).
+Expected: `BUILD SUCCESSFUL` (5 통과).
 
-- [ ] **Step 8: 커밋**
+- [ ] **Step 7: 커밋**
 
 ```bash
-git add -A && git status --short
-git commit -m "$(cat <<'EOF'
-9/23 :core:network Firebase 데이터소스, :core:data PlayerRepository, :core:domain ValidateNicknameUseCase
+git add -A && git commit -m "$(cat <<'EOF'
+9/23 :core:network Firebase 데이터소스(DataSourceException 규약), :core:data PlayerRepository, :core:domain ValidateNicknameUseCase
 
 Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>
 EOF
@@ -1565,1266 +1293,130 @@ EOF
 
 ### Task 6: `:feature:onboarding` (소개 → 권한 → 닉네임)
 
-**Files:**
-- Create: `feature/onboarding/build.gradle.kts`, `feature/onboarding/src/main/kotlin/com/jaychoi/eattheland/feature/onboarding/ui/{OnboardingKey,OnboardingRoute,OnboardingUiState,OnboardingViewModel,OnboardingScreen}.kt`, `feature/onboarding/src/main/res/values/strings.xml`
-- Create: `feature/onboarding/src/test/kotlin/com/jaychoi/eattheland/feature/onboarding/{OnboardingViewModelTest,OnboardingScreenshotTest}.kt`
-- Modify: `settings.gradle.kts`
-
-**Interfaces:**
-- Consumes: `PlayerRepository`, `ValidateNicknameUseCase`, `FakePlayerRepository`, `MainDispatcherRule`, `AppTheme`
-- Produces: `@Serializable data object OnboardingKey : NavKey`, `EntryProviderScope<NavKey>.onboardingEntry(onCompleted: () -> Unit)`, `OnboardingScreen(uiState, onEvent, modifier)`
-
-- [ ] **Step 1: 모듈 등록 + 빌드 파일**
-
-`settings.gradle.kts` 에 `include(":feature:onboarding")`.
-
-`feature/onboarding/build.gradle.kts`:
-```kotlin
-plugins {
-    alias(libs.plugins.convention.android.feature)
-    alias(libs.plugins.convention.android.library.compose)
-}
-
-android {
-    namespace = "com.jaychoi.eattheland.feature.onboarding"
-}
-
-dependencies {
-    implementation(projects.core.common)
-    implementation(projects.core.model)
-    implementation(projects.core.data)
-    implementation(projects.core.domain)
-    implementation(projects.core.designsystem)
-    implementation(libs.androidx.activity.compose) // rememberLauncherForActivityResult
-    testImplementation(projects.core.testing)
-}
-```
-
-- [ ] **Step 2: UiState·Event·Key**
-
-`ui/OnboardingKey.kt`:
-```kotlin
-package com.jaychoi.eattheland.feature.onboarding.ui
-
-import androidx.navigation3.runtime.NavKey
-import kotlinx.serialization.Serializable
-
-@Serializable
-data object OnboardingKey : NavKey
-```
-
-`ui/OnboardingUiState.kt`:
-```kotlin
-package com.jaychoi.eattheland.feature.onboarding.ui
-
-import com.jaychoi.eattheland.core.model.PlayerError
-
-enum class OnboardingStep { Intro, Permission, Nickname }
-
-data class OnboardingUiState(
-    val step: OnboardingStep = OnboardingStep.Intro,
-    val nickname: String = "",
-    val isNicknameValid: Boolean = false,
-    val isSubmitting: Boolean = false,
-    val error: PlayerError? = null,
-    /** 닉네임 저장 완료. UI 가 onCompleted 를 부른 뒤 Consumed 이벤트로 되돌린다 (R-12-03). */
-    val completed: Boolean = false,
-)
-
-sealed interface OnboardingEvent {
-    data object Next : OnboardingEvent
-    data class PermissionResult(val locationGranted: Boolean) : OnboardingEvent
-    data class NicknameChanged(val value: String) : OnboardingEvent
-    data object Submit : OnboardingEvent
-    data object Retry : OnboardingEvent
-    data object CompletedConsumed : OnboardingEvent
-}
-```
-
-- [ ] **Step 3: ViewModel 테스트 먼저**
-
-`feature/onboarding/src/test/kotlin/com/jaychoi/eattheland/feature/onboarding/OnboardingViewModelTest.kt`:
-```kotlin
-package com.jaychoi.eattheland.feature.onboarding
-
-import com.jaychoi.eattheland.core.domain.ValidateNicknameUseCase
-import com.jaychoi.eattheland.core.model.PlayerError
-import com.jaychoi.eattheland.core.testing.FakePlayerRepository
-import com.jaychoi.eattheland.core.testing.MainDispatcherRule
-import com.jaychoi.eattheland.feature.onboarding.ui.OnboardingEvent
-import com.jaychoi.eattheland.feature.onboarding.ui.OnboardingStep
-import com.jaychoi.eattheland.feature.onboarding.ui.OnboardingViewModel
-import kotlinx.coroutines.test.runTest
-import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
-import org.junit.Assert.assertNull
-import org.junit.Assert.assertTrue
-import org.junit.Rule
-import org.junit.Test
-
-class OnboardingViewModelTest {
-    @get:Rule val mainDispatcherRule = MainDispatcherRule()
-
-    private val repository = FakePlayerRepository()
-    private fun viewModel() = OnboardingViewModel(repository, ValidateNicknameUseCase())
-
-    @Test
-    fun `initialize 는 익명 로그인을 시도하고 Intro 에 머문다`() = runTest {
-        val vm = viewModel()
-        vm.initialize()
-        assertEquals(OnboardingStep.Intro, vm.uiState.value.step)
-        assertNull(vm.uiState.value.error)
-    }
-
-    @Test
-    fun `로그인 실패는 error 로 표시되고 Retry 로 재시도한다`() = runTest {
-        repository.signInError = PlayerError.Network
-        val vm = viewModel()
-        vm.initialize()
-        assertEquals(PlayerError.Network, vm.uiState.value.error)
-        repository.signInError = null
-        vm.onEvent(OnboardingEvent.Retry)
-        assertNull(vm.uiState.value.error)
-    }
-
-    @Test
-    fun `Next 로 Intro → Permission, 권한 거부여도 Nickname 으로 간다`() = runTest {
-        val vm = viewModel()
-        vm.initialize()
-        vm.onEvent(OnboardingEvent.Next)
-        assertEquals(OnboardingStep.Permission, vm.uiState.value.step)
-        vm.onEvent(OnboardingEvent.PermissionResult(locationGranted = false))
-        assertEquals(OnboardingStep.Nickname, vm.uiState.value.step)
-    }
-
-    @Test
-    fun `닉네임 유효성은 입력마다 갱신된다`() = runTest {
-        val vm = viewModel()
-        vm.onEvent(OnboardingEvent.NicknameChanged("a"))
-        assertFalse(vm.uiState.value.isNicknameValid)
-        vm.onEvent(OnboardingEvent.NicknameChanged("땅주인"))
-        assertTrue(vm.uiState.value.isNicknameValid)
-    }
-
-    @Test
-    fun `Submit 성공 시 completed=true, Consumed 로 되돌린다`() = runTest {
-        val vm = viewModel()
-        vm.onEvent(OnboardingEvent.NicknameChanged("땅주인"))
-        vm.onEvent(OnboardingEvent.Submit)
-        assertTrue(vm.uiState.value.completed)
-        assertEquals(listOf("땅주인"), repository.setNicknameCalls)
-        vm.onEvent(OnboardingEvent.CompletedConsumed)
-        assertFalse(vm.uiState.value.completed)
-    }
-
-    @Test
-    fun `Submit 중복 닉네임은 NicknameTaken 에러`() = runTest {
-        repository.setNicknameError = PlayerError.NicknameTaken
-        val vm = viewModel()
-        vm.onEvent(OnboardingEvent.NicknameChanged("땅주인"))
-        vm.onEvent(OnboardingEvent.Submit)
-        assertEquals(PlayerError.NicknameTaken, vm.uiState.value.error)
-        assertFalse(vm.uiState.value.completed)
-    }
-
-    @Test
-    fun `유효하지 않은 닉네임으로는 Submit 이 무시된다`() = runTest {
-        val vm = viewModel()
-        vm.onEvent(OnboardingEvent.NicknameChanged("a"))
-        vm.onEvent(OnboardingEvent.Submit)
-        assertTrue(repository.setNicknameCalls.isEmpty())
-    }
-}
-```
-```bash
-./gradlew :feature:onboarding:testDebugUnitTest --no-daemon 2>&1 | grep -E "error:|BUILD" | head -3
-```
-Expected: 컴파일 실패.
-
-- [ ] **Step 4: ViewModel 구현**
-
-`ui/OnboardingViewModel.kt`:
-```kotlin
-package com.jaychoi.eattheland.feature.onboarding.ui
-
-import androidx.lifecycle.ViewModel
-import androidx.lifecycle.viewModelScope
-import com.jaychoi.eattheland.core.data.PlayerRepository
-import com.jaychoi.eattheland.core.domain.ValidateNicknameUseCase
-import dagger.hilt.android.lifecycle.HiltViewModel
-import javax.inject.Inject
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.update
-import kotlinx.coroutines.launch
-
-/** R-12-02 매트릭스 해당 0개 → MVVM-UDF. */
-@HiltViewModel
-class OnboardingViewModel @Inject constructor(
-    private val players: PlayerRepository,
-    private val validateNickname: ValidateNicknameUseCase,
-) : ViewModel() {
-
-    private val _uiState = MutableStateFlow(OnboardingUiState())
-    val uiState: StateFlow<OnboardingUiState> = _uiState.asStateFlow()
-
-    private var initialized = false
-
-    fun initialize() {
-        if (initialized) return
-        initialized = true
-        signIn()
-    }
-
-    fun onEvent(event: OnboardingEvent) {
-        when (event) {
-            OnboardingEvent.Next -> _uiState.update { it.copy(step = OnboardingStep.Permission) }
-            is OnboardingEvent.PermissionResult -> _uiState.update { it.copy(step = OnboardingStep.Nickname) }
-            is OnboardingEvent.NicknameChanged -> _uiState.update {
-                it.copy(nickname = event.value, isNicknameValid = validateNickname(event.value), error = null)
-            }
-            OnboardingEvent.Submit -> submit()
-            OnboardingEvent.Retry -> signIn()
-            OnboardingEvent.CompletedConsumed -> _uiState.update { it.copy(completed = false) }
-        }
-    }
-
-    private fun signIn() {
-        viewModelScope.launch {
-            _uiState.update { it.copy(error = null) }
-            val error = players.ensureSignedIn()
-            _uiState.update { it.copy(error = error) }
-        }
-    }
-
-    private fun submit() {
-        val state = _uiState.value
-        if (!state.isNicknameValid || state.isSubmitting) return
-        viewModelScope.launch {
-            _uiState.update { it.copy(isSubmitting = true, error = null) }
-            val error = players.setNickname(state.nickname)
-            _uiState.update { it.copy(isSubmitting = false, error = error, completed = error == null) }
-        }
-    }
-}
-```
-```bash
-./gradlew :feature:onboarding:testDebugUnitTest --no-daemon 2>&1 | grep -E "FAILED|BUILD" | head -5
-```
-Expected: `BUILD SUCCESSFUL`, 7개 통과.
-
-- [ ] **Step 5: 문자열 리소스**
-
-`feature/onboarding/src/main/res/values/strings.xml`:
-```xml
-<?xml version="1.0" encoding="utf-8"?>
-<resources>
-    <string name="onboarding_intro_title">걸어서 동네를 내 땅으로</string>
-    <string name="onboarding_intro_body">걷는 곳마다 땅이 내 색으로 칠해져요.\n남의 땅을 밟으면 뺏을 수 있고, 내 땅도 뺏길 수 있어요.</string>
-    <string name="onboarding_intro_notice">계정은 이 기기에만 저장돼요. 앱을 삭제하거나 기기를 바꾸면 기록이 사라져요.</string>
-    <string name="onboarding_next">다음</string>
-    <string name="onboarding_permission_title">위치 권한이 필요해요</string>
-    <string name="onboarding_permission_body">걷는 동안 어느 땅을 밟았는지 확인하려면 정확한 위치가 필요해요. 알림 권한은 산책 중 진행 상황을 보여주는 데 써요.</string>
-    <string name="onboarding_permission_allow">권한 허용</string>
-    <string name="onboarding_nickname_title">닉네임을 정해주세요</string>
-    <string name="onboarding_nickname_hint">한글·영문·숫자 2~12자</string>
-    <string name="onboarding_nickname_submit">시작하기</string>
-    <string name="onboarding_error_network">네트워크 연결을 확인해 주세요</string>
-    <string name="onboarding_error_taken">이미 사용 중인 닉네임이에요</string>
-    <string name="onboarding_error_invalid">닉네임 형식이 맞지 않아요</string>
-    <string name="onboarding_error_unknown">잠시 후 다시 시도해 주세요</string>
-    <string name="onboarding_retry">다시 시도</string>
-</resources>
-```
-
-- [ ] **Step 6: Screen (순수 UI) + Route**
-
-`ui/OnboardingScreen.kt`:
-```kotlin
-package com.jaychoi.eattheland.feature.onboarding.ui
-
-import android.content.res.Configuration
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.Button
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.tooling.preview.Preview
-import androidx.compose.ui.unit.dp
-import com.jaychoi.eattheland.core.designsystem.theme.AppTheme
-import com.jaychoi.eattheland.core.model.PlayerError
-import com.jaychoi.eattheland.feature.onboarding.R
-
-@Composable
-fun OnboardingScreen(
-    uiState: OnboardingUiState,
-    onEvent: (OnboardingEvent) -> Unit,
-    onRequestPermissions: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    Column(
-        modifier = modifier.fillMaxSize().padding(24.dp),
-        verticalArrangement = Arrangement.Center,
-    ) {
-        when (uiState.step) {
-            OnboardingStep.Intro -> IntroStep(onNext = { onEvent(OnboardingEvent.Next) })
-            OnboardingStep.Permission -> PermissionStep(onAllow = onRequestPermissions)
-            OnboardingStep.Nickname -> NicknameStep(uiState, onEvent)
-        }
-        uiState.error?.let { error ->
-            Spacer(Modifier.height(16.dp))
-            Text(error.toMessage(), color = MaterialTheme.colorScheme.error)
-            if (error == PlayerError.Network) {
-                Button(onClick = { onEvent(OnboardingEvent.Retry) }) { Text(stringResource(R.string.onboarding_retry)) }
-            }
-        }
-    }
-}
-
-@Composable
-private fun IntroStep(onNext: () -> Unit) {
-    Text(stringResource(R.string.onboarding_intro_title), style = MaterialTheme.typography.headlineMedium)
-    Spacer(Modifier.height(12.dp))
-    Text(stringResource(R.string.onboarding_intro_body), style = MaterialTheme.typography.bodyLarge)
-    Spacer(Modifier.height(12.dp))
-    Text(
-        stringResource(R.string.onboarding_intro_notice),
-        style = MaterialTheme.typography.bodySmall,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-    )
-    Spacer(Modifier.height(24.dp))
-    Button(onClick = onNext, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.onboarding_next)) }
-}
-
-@Composable
-private fun PermissionStep(onAllow: () -> Unit) {
-    Text(stringResource(R.string.onboarding_permission_title), style = MaterialTheme.typography.headlineMedium)
-    Spacer(Modifier.height(12.dp))
-    Text(stringResource(R.string.onboarding_permission_body), style = MaterialTheme.typography.bodyLarge)
-    Spacer(Modifier.height(24.dp))
-    Button(onClick = onAllow, modifier = Modifier.fillMaxWidth()) {
-        Text(stringResource(R.string.onboarding_permission_allow))
-    }
-}
-
-@Composable
-private fun NicknameStep(uiState: OnboardingUiState, onEvent: (OnboardingEvent) -> Unit) {
-    Text(stringResource(R.string.onboarding_nickname_title), style = MaterialTheme.typography.headlineMedium)
-    Spacer(Modifier.height(12.dp))
-    OutlinedTextField(
-        value = uiState.nickname,
-        onValueChange = { onEvent(OnboardingEvent.NicknameChanged(it)) },
-        singleLine = true,
-        placeholder = { Text(stringResource(R.string.onboarding_nickname_hint)) },
-        modifier = Modifier.fillMaxWidth(),
-    )
-    Spacer(Modifier.height(24.dp))
-    Button(
-        onClick = { onEvent(OnboardingEvent.Submit) },
-        enabled = uiState.isNicknameValid && !uiState.isSubmitting,
-        modifier = Modifier.fillMaxWidth(),
-    ) {
-        if (uiState.isSubmitting) CircularProgressIndicator() else Text(stringResource(R.string.onboarding_nickname_submit))
-    }
-}
-
-@Composable
-private fun PlayerError.toMessage(): String = stringResource(
-    when (this) {
-        PlayerError.Network -> R.string.onboarding_error_network
-        PlayerError.NicknameTaken -> R.string.onboarding_error_taken
-        PlayerError.InvalidNickname -> R.string.onboarding_error_invalid
-        is PlayerError.Unknown -> R.string.onboarding_error_unknown
-    },
-)
-
-@Preview(name = "Intro")
-@Composable
-private fun IntroPreview() {
-    AppTheme { OnboardingScreen(OnboardingUiState(), onEvent = {}, onRequestPermissions = {}) }
-}
-
-@Preview(name = "Nickname dark", uiMode = Configuration.UI_MODE_NIGHT_YES)
-@Composable
-private fun NicknameDarkPreview() {
-    AppTheme {
-        OnboardingScreen(
-            OnboardingUiState(step = OnboardingStep.Nickname, nickname = "땅주인", isNicknameValid = true),
-            onEvent = {},
-            onRequestPermissions = {},
-        )
-    }
-}
-```
-
-`ui/OnboardingRoute.kt`:
-```kotlin
-package com.jaychoi.eattheland.feature.onboarding.ui
-
-import android.Manifest
-import android.os.Build
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
-import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import androidx.navigation3.runtime.EntryProviderScope
-import androidx.navigation3.runtime.NavKey
-
-fun EntryProviderScope<NavKey>.onboardingEntry(onCompleted: () -> Unit) {
-    entry<OnboardingKey> { OnboardingRoute(onCompleted = onCompleted) }
-}
-
-@Composable
-internal fun OnboardingRoute(
-    onCompleted: () -> Unit,
-    viewModel: OnboardingViewModel = hiltViewModel(),
-) {
-    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
-    LaunchedEffect(viewModel) { viewModel.initialize() }
-
-    val launcher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { result ->
-        viewModel.onEvent(
-            OnboardingEvent.PermissionResult(locationGranted = result[Manifest.permission.ACCESS_FINE_LOCATION] == true),
-        )
-    }
-
-    LaunchedEffect(uiState.completed) {
-        if (uiState.completed) {
-            onCompleted()
-            viewModel.onEvent(OnboardingEvent.CompletedConsumed)
-        }
-    }
-
-    OnboardingScreen(
-        uiState = uiState,
-        onEvent = viewModel::onEvent,
-        onRequestPermissions = { launcher.launch(requiredPermissions()) },
-    )
-}
-
-private fun requiredPermissions(): Array<String> = buildList {
-    add(Manifest.permission.ACCESS_FINE_LOCATION)
-    add(Manifest.permission.ACCESS_COARSE_LOCATION)
-    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) add(Manifest.permission.POST_NOTIFICATIONS)
-}.toTypedArray()
-```
-
-- [ ] **Step 7: 스크린샷 테스트 + 골든**
-
-`feature/onboarding/src/test/kotlin/com/jaychoi/eattheland/feature/onboarding/OnboardingScreenshotTest.kt`:
-```kotlin
-package com.jaychoi.eattheland.feature.onboarding
-
-import androidx.compose.ui.test.junit4.v2.createComposeRule
-import androidx.compose.ui.test.onRoot
-import androidx.test.ext.junit.runners.AndroidJUnit4
-import com.github.takahirom.roborazzi.captureRoboImage
-import com.jaychoi.eattheland.core.designsystem.theme.AppTheme
-import com.jaychoi.eattheland.core.model.PlayerError
-import com.jaychoi.eattheland.feature.onboarding.ui.OnboardingScreen
-import com.jaychoi.eattheland.feature.onboarding.ui.OnboardingStep
-import com.jaychoi.eattheland.feature.onboarding.ui.OnboardingUiState
-import org.junit.Rule
-import org.junit.Test
-import org.junit.runner.RunWith
-import org.robolectric.annotation.Config
-import org.robolectric.annotation.GraphicsMode
-
-@RunWith(AndroidJUnit4::class)
-@GraphicsMode(GraphicsMode.Mode.NATIVE)
-@Config(sdk = [35])
-class OnboardingScreenshotTest {
-    @get:Rule val composeRule = createComposeRule()
-
-    private fun capture(state: OnboardingUiState) {
-        composeRule.setContent { AppTheme { OnboardingScreen(state, onEvent = {}, onRequestPermissions = {}) } }
-        composeRule.onRoot().captureRoboImage()
-    }
-
-    @Test fun intro() = capture(OnboardingUiState())
-
-    @Test fun permission() = capture(OnboardingUiState(step = OnboardingStep.Permission))
-
-    @Test fun nickname_taken_error() = capture(
-        OnboardingUiState(step = OnboardingStep.Nickname, nickname = "땅주인", isNicknameValid = true, error = PlayerError.NicknameTaken),
-    )
-}
-```
-```bash
-./gradlew ktlintFormat --no-daemon 2>&1 | tail -2
-./gradlew :feature:onboarding:recordRoborazziDebug :feature:onboarding:testDebugUnitTest --no-daemon 2>&1 | grep -E "FAILED|BUILD" | head -5
-ls feature/onboarding/src/test/screenshots
-```
-Expected: `BUILD SUCCESSFUL`, png 3개.
-
-- [ ] **Step 8: 커밋**
-
-```bash
-git add -A && git status --short
-git commit -m "$(cat <<'EOF'
-9/23 :feature:onboarding 소개·권한·닉네임 3단계 (ViewModel 테스트 7건, 스크린샷 3장)
-
-Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>
-EOF
-)"
-```
+v1 Task 6 과 **동일** (파일·테스트·문자열·Screen·Route·스크린샷). PlayerRepository 인터페이스가 그대로이므로 변경 없음. 커밋 메시지: `9/23 :feature:onboarding 소개·권한·닉네임 3단계 (ViewModel 테스트 7건, 스크린샷 3장)`.
 
 ---
 
-### Task 7: `:app` 루트 — 시작 분기 · 온보딩 → 지도 연결 · `:core:network`/`:core:data` 셀 스트림
+### Task 7: `:app` 루트 — 시작 분기 · 온보딩 → 지도 · 셀 스트림
 
-**Files:**
-- Create: `app/src/main/kotlin/com/jaychoi/eattheland/AppRootViewModel.kt`, `app/src/test/kotlin/com/jaychoi/eattheland/AppRootViewModelTest.kt`
-- Create: `core/network/src/main/kotlin/com/jaychoi/eattheland/core/network/{CellDataSource,FirestoreCellDataSource,CellDto}.kt`, `core/network/src/test/kotlin/com/jaychoi/eattheland/core/network/CellDtoTest.kt`
-- Create: `core/data/src/main/kotlin/com/jaychoi/eattheland/core/data/{TerritoryRepository,DefaultTerritoryRepository}.kt`, `core/testing/src/main/kotlin/com/jaychoi/eattheland/core/testing/{FakeCellDataSource,FakeTerritoryRepository}.kt`
-- Modify: `app/src/main/kotlin/com/jaychoi/eattheland/{MainActivity,Navigator,EatTheLandApp}.kt`, `app/build.gradle.kts`, `core/network/di/NetworkModule.kt`, `core/data/di/DataModule.kt`
-
-**Interfaces:**
-- Consumes: `PlayerRepository.currentPlayer`, `OnboardingKey`/`onboardingEntry`, `MapKey`/`mapEntry`(Task 1 스텁 시그니처 `mapEntry(onBack)` — Task 8에서 바뀌면 Task 8이 `:app`을 고친다)
-- Produces:
-  - `AppRootViewModel.uiState: StateFlow<AppRootUiState(isLoading: Boolean = true, hasProfile: Boolean = false)>`
-  - `Navigator.replaceAll(key)`
-  - `data class CellDto(val ownerUid: String? = null, val ownerColor: Long? = null, val capturedAt: Timestamp? = null, val region: String? = null)` + `fun CellDto.toDomain(id: String): Cell?` (필수 필드 없으면 null)
-  - `interface CellDataSource { fun observe(regions: Set<String>): Flow<Map<String, CellDto>> }`
-  - `interface TerritoryRepository { fun observeCells(regions: Set<CellId>): Flow<List<Cell>> }`
-  - `FakeTerritoryRepository { val cells = MutableStateFlow<List<Cell>>(emptyList()); val requestedRegions = mutableListOf<Set<CellId>>() }`
-
-- [ ] **Step 1: `CellDto.toDomain` 테스트 → 구현 (Review Focus 5)**
-
-`core/network/build.gradle.kts` 에 `testImplementation(libs.junit4)` 추가.
-
-`core/network/src/test/kotlin/com/jaychoi/eattheland/core/network/CellDtoTest.kt`:
-```kotlin
-package com.jaychoi.eattheland.core.network
-
-import com.google.firebase.Timestamp
-import com.jaychoi.eattheland.core.model.CellId
-import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNull
-import org.junit.Test
-
-class CellDtoTest {
-    @Test
-    fun `필수 필드가 다 있으면 Cell`() {
-        val dto = CellDto(ownerUid = "u1", ownerColor = 2, capturedAt = Timestamp(1_700_000_000, 0), region = "87r")
-        val cell = dto.toDomain("8br")
-        assertEquals(CellId("8br"), cell?.id)
-        assertEquals("u1", cell?.ownerUid)
-        assertEquals(2, cell?.ownerColor)
-        assertEquals(1_700_000_000_000L, cell?.capturedAtMillis)
-        assertEquals(CellId("87r"), cell?.region)
-    }
-
-    @Test
-    fun `ownerUid 나 region 이 없으면 null (배치 삭제 직후 스냅샷 방어)`() {
-        assertNull(CellDto(ownerColor = 1, region = "87r").toDomain("x"))
-        assertNull(CellDto(ownerUid = "u1", ownerColor = 1).toDomain("x"))
-    }
-
-    @Test
-    fun `capturedAt 이 없으면 0 으로 간주`() {
-        assertEquals(0L, CellDto(ownerUid = "u1", ownerColor = 0, region = "r").toDomain("x")?.capturedAtMillis)
-    }
-}
-```
-
-`core/network/.../CellDto.kt`:
-```kotlin
-package com.jaychoi.eattheland.core.network
-
-import com.google.firebase.Timestamp
-import com.jaychoi.eattheland.core.model.Cell
-import com.jaychoi.eattheland.core.model.CellId
-
-data class CellDto(
-    val ownerUid: String? = null,
-    val ownerColor: Long? = null,
-    val capturedAt: Timestamp? = null,
-    val region: String? = null,
-)
-
-private const val MILLIS_PER_SECOND = 1_000L
-
-fun CellDto.toDomain(id: String): Cell? {
-    val owner = ownerUid ?: return null
-    val regionId = region ?: return null
-    return Cell(
-        id = CellId(id),
-        ownerUid = owner,
-        ownerColor = (ownerColor ?: 0L).toInt(),
-        capturedAtMillis = capturedAt?.let { it.seconds * MILLIS_PER_SECOND } ?: 0L,
-        region = CellId(regionId),
-    )
-}
-```
-```bash
-./gradlew :core:network:testDebugUnitTest --no-daemon 2>&1 | grep -E "FAILED|BUILD" | head -3
-```
-Expected: `BUILD SUCCESSFUL`.
-
-- [ ] **Step 2: 셀 데이터소스 + Repository + Fake**
-
-`core/network/.../CellDataSource.kt`:
-```kotlin
-package com.jaychoi.eattheland.core.network
-
-import kotlinx.coroutines.flow.Flow
-
-interface CellDataSource {
-    /** `cells where region in regions` 실시간 스냅샷. 문서 ID → DTO. regions 가 비면 빈 맵 한 번. */
-    fun observe(regions: Set<String>): Flow<Map<String, CellDto>>
-}
-```
-`FirestoreCellDataSource.kt`:
-```kotlin
-package com.jaychoi.eattheland.core.network
-
-import com.google.firebase.Firebase
-import com.google.firebase.firestore.firestore
-import javax.inject.Inject
-import kotlinx.coroutines.channels.awaitClose
-import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.callbackFlow
-import kotlinx.coroutines.flow.flowOf
-
-class FirestoreCellDataSource @Inject constructor() : CellDataSource {
-    override fun observe(regions: Set<String>): Flow<Map<String, CellDto>> {
-        if (regions.isEmpty()) return flowOf(emptyMap())
-        require(regions.size <= FIRESTORE_IN_LIMIT) { "Firestore in 쿼리 한도 초과: ${regions.size}" }
-        return callbackFlow {
-            val registration = Firebase.firestore.collection("cells")
-                .whereIn("region", regions.toList())
-                .addSnapshotListener { snap, error ->
-                    if (error != null) {
-                        close(error)
-                        return@addSnapshotListener
-                    }
-                    if (snap != null) trySend(snap.documents.associate { it.id to (it.toObject(CellDto::class.java) ?: CellDto()) })
-                }
-            awaitClose { registration.remove() }
-        }
-    }
-
-    private companion object {
-        const val FIRESTORE_IN_LIMIT = 30
-    }
-}
-```
-`NetworkModule` 에 `@Binds fun bindCell(impl: FirestoreCellDataSource): CellDataSource` 추가.
-
-`core/data/.../TerritoryRepository.kt`:
-```kotlin
-package com.jaychoi.eattheland.core.data
-
-import com.jaychoi.eattheland.core.model.Cell
-import com.jaychoi.eattheland.core.model.CellId
-import kotlinx.coroutines.flow.Flow
-
-interface TerritoryRepository {
-    fun observeCells(regions: Set<CellId>): Flow<List<Cell>>
-}
-```
-`DefaultTerritoryRepository.kt`:
-```kotlin
-package com.jaychoi.eattheland.core.data
-
-import com.jaychoi.eattheland.core.model.Cell
-import com.jaychoi.eattheland.core.model.CellId
-import com.jaychoi.eattheland.core.network.CellDataSource
-import com.jaychoi.eattheland.core.network.toDomain
-import javax.inject.Inject
-import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.map
-
-class DefaultTerritoryRepository @Inject constructor(
-    private val cells: CellDataSource,
-) : TerritoryRepository {
-    override fun observeCells(regions: Set<CellId>): Flow<List<Cell>> =
-        cells.observe(regions.map { it.value }.toSet()).map { byId -> byId.mapNotNull { (id, dto) -> dto.toDomain(id) } }
-}
-```
-`DataModule` 에 `@Binds fun bindTerritoryRepository(impl: DefaultTerritoryRepository): TerritoryRepository` 추가.
-
-`core/testing/.../FakeCellDataSource.kt`:
-```kotlin
-package com.jaychoi.eattheland.core.testing
-
-import com.jaychoi.eattheland.core.network.CellDataSource
-import com.jaychoi.eattheland.core.network.CellDto
-import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.MutableStateFlow
-
-class FakeCellDataSource : CellDataSource {
-    val docs = MutableStateFlow<Map<String, CellDto>>(emptyMap())
-    val requested = mutableListOf<Set<String>>()
-
-    override fun observe(regions: Set<String>): Flow<Map<String, CellDto>> {
-        requested += regions
-        return docs
-    }
-}
-```
-`FakeTerritoryRepository.kt`:
-```kotlin
-package com.jaychoi.eattheland.core.testing
-
-import com.jaychoi.eattheland.core.data.TerritoryRepository
-import com.jaychoi.eattheland.core.model.Cell
-import com.jaychoi.eattheland.core.model.CellId
-import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.MutableStateFlow
-
-class FakeTerritoryRepository : TerritoryRepository {
-    val cells = MutableStateFlow<List<Cell>>(emptyList())
-    val requestedRegions = mutableListOf<Set<CellId>>()
-
-    override fun observeCells(regions: Set<CellId>): Flow<List<Cell>> {
-        requestedRegions += regions
-        return cells
-    }
-}
-```
-
-- [ ] **Step 3: `AppRootViewModel` 테스트 → 구현**
-
-`app/build.gradle.kts` `dependencies` 에 추가:
-```kotlin
-    implementation(projects.core.model)
-    implementation(projects.core.data)
-    implementation(projects.feature.onboarding)
-    implementation(libs.androidx.lifecycle.runtime.compose)
-    implementation(libs.androidx.lifecycle.viewmodel.compose)
-    implementation(libs.androidx.hilt.lifecycle.viewmodel.compose)
-    testImplementation(projects.core.testing)
-    testImplementation(libs.kotlinx.coroutines.test)
-    testImplementation(libs.turbine)
-```
-
-`app/src/test/kotlin/com/jaychoi/eattheland/AppRootViewModelTest.kt`:
-```kotlin
-package com.jaychoi.eattheland
-
-import app.cash.turbine.test
-import com.jaychoi.eattheland.core.model.Player
-import com.jaychoi.eattheland.core.testing.FakePlayerRepository
-import com.jaychoi.eattheland.core.testing.MainDispatcherRule
-import kotlinx.coroutines.test.runTest
-import org.junit.Assert.assertEquals
-import org.junit.Rule
-import org.junit.Test
-
-class AppRootViewModelTest {
-    @get:Rule val mainDispatcherRule = MainDispatcherRule()
-
-    private val repository = FakePlayerRepository()
-
-    @Test
-    fun `첫 값 전에는 isLoading, 프로필 없으면 hasProfile=false, 생기면 true`() = runTest {
-        val vm = AppRootViewModel(repository)
-        vm.uiState.test {
-            assertEquals(AppRootUiState(isLoading = true), awaitItem())
-            assertEquals(AppRootUiState(isLoading = false, hasProfile = false), awaitItem())
-            repository.playerFlow.value = Player("u", "n", 0, 0)
-            assertEquals(AppRootUiState(isLoading = false, hasProfile = true), awaitItem())
-        }
-    }
-}
-```
-
-`app/src/main/kotlin/com/jaychoi/eattheland/AppRootViewModel.kt`:
-```kotlin
-package com.jaychoi.eattheland
-
-import androidx.lifecycle.ViewModel
-import androidx.lifecycle.viewModelScope
-import com.jaychoi.eattheland.core.data.PlayerRepository
-import dagger.hilt.android.lifecycle.HiltViewModel
-import javax.inject.Inject
-import kotlinx.coroutines.flow.SharingStarted
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.map
-import kotlinx.coroutines.flow.stateIn
-
-data class AppRootUiState(val isLoading: Boolean = true, val hasProfile: Boolean = false)
-
-/** 시작 분기(온보딩/지도)는 Activity 가 아니라 루트 상태 홀더가 정한다 (R-18-06). */
-@HiltViewModel
-class AppRootViewModel @Inject constructor(players: PlayerRepository) : ViewModel() {
-    val uiState: StateFlow<AppRootUiState> = players.currentPlayer
-        .map { AppRootUiState(isLoading = false, hasProfile = it != null) }
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), AppRootUiState())
-
-    private companion object {
-        const val STOP_TIMEOUT_MS = 5_000L
-    }
-}
-```
-```bash
-./gradlew :app:testDebugUnitTest --tests "*AppRootViewModelTest*" --no-daemon 2>&1 | grep -E "FAILED|BUILD" | head -3
-```
-Expected: `BUILD SUCCESSFUL`. (Firebase Auth 캐시 읽기는 로컬이므로 이 상태로 스플래시 유지 조건에 써도 된다 — R-18-04.)
-
-- [ ] **Step 4: Navigator.replaceAll + 앱 루트 + 스플래시 조건**
-
-`Navigator.kt` 에 추가:
-```kotlin
-    /** 온보딩 완료처럼 되돌아갈 곳이 없어지는 전환. 백스택을 이 키 하나로 바꾼다. */
-    fun replaceAll(key: NavKey) {
-        backStack.clear()
-        backStack.add(key)
-    }
-```
-
-`EatTheLandApp.kt` 를 다음으로 교체:
-```kotlin
-package com.jaychoi.eattheland
-
-import androidx.compose.foundation.layout.consumeWindowInsets
-import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.adaptive.currentWindowAdaptiveInfoV2
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.remember
-import androidx.compose.ui.Modifier
-import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import androidx.lifecycle.viewmodel.navigation3.rememberViewModelStoreNavEntryDecorator
-import androidx.navigation3.runtime.NavKey
-import androidx.navigation3.runtime.entryProvider
-import androidx.navigation3.runtime.rememberNavBackStack
-import androidx.navigation3.runtime.rememberSaveableStateHolderNavEntryDecorator
-import androidx.navigation3.ui.NavDisplay
-import androidx.window.core.layout.WindowSizeClass
-import com.jaychoi.eattheland.feature.map.ui.MapKey
-import com.jaychoi.eattheland.feature.map.ui.mapEntry
-import com.jaychoi.eattheland.feature.onboarding.ui.OnboardingKey
-import com.jaychoi.eattheland.feature.onboarding.ui.onboardingEntry
-
-/**
- * 앱 루트. 백스택·feature 조합을 :app 이 소유한다 (R-10-08, R-13-03).
- * 프로필 유무는 [AppRootViewModel] 이 정하고, 첫 값이 오기 전에는 MainActivity 가 스플래시를 유지한다 (R-18-04).
- */
-@Suppress("UnusedParameter")
-@Composable
-fun EatTheLandApp(
-    modifier: Modifier = Modifier,
-    windowSizeClass: WindowSizeClass = currentWindowAdaptiveInfoV2().windowSizeClass,
-    viewModel: AppRootViewModel = hiltViewModel(),
-) {
-    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
-    if (uiState.isLoading) return
-
-    val startKey: NavKey = if (uiState.hasProfile) MapKey else OnboardingKey
-    val backStack = rememberNavBackStack(startKey)
-    val navigator = remember(backStack) { Navigator(backStack) }
-
-    Scaffold(modifier = modifier) { innerPadding ->
-        NavDisplay(
-            backStack = backStack,
-            modifier = Modifier.padding(innerPadding).consumeWindowInsets(innerPadding),
-            onBack = { navigator.goBack() },
-            entryDecorators = listOf(
-                rememberSaveableStateHolderNavEntryDecorator(),
-                rememberViewModelStoreNavEntryDecorator(),
-            ),
-            entryProvider = entryProvider {
-                onboardingEntry(onCompleted = { navigator.replaceAll(MapKey) })
-                mapEntry(onBack = { navigator.goBack() })
-            },
-        )
-    }
-}
-```
-
-`MainActivity.kt` 의 `onCreate` 를:
-```kotlin
-    private val viewModel: AppRootViewModel by viewModels()
-
-    override fun onCreate(savedInstanceState: Bundle?) {
-        val splashScreen = installSplashScreen()
-        super.onCreate(savedInstanceState)
-        // 로컬 Auth 캐시로 프로필 유무가 정해질 때까지만 (R-18-04). 네트워크 응답을 기다리지 않는다.
-        splashScreen.setKeepOnScreenCondition { viewModel.uiState.value.isLoading }
-        enableEdgeToEdge()
-        setContent { AppTheme { EatTheLandApp() } }
-    }
-```
-import 추가: `androidx.activity.viewModels`. (`hiltViewModel()` 이 Activity 스코프 ViewModel 을 `viewModels()` 와 같은 인스턴스로 돌려준다 — NavEntry 밖에서 호출하므로 Activity 소유.)
-
-- [ ] **Step 5: 게이트 + 기기 확인**
-
-```bash
-./gradlew ktlintFormat --no-daemon 2>&1 | tail -1
-./gradlew ktlintCheck detektDebug testDebugUnitTest verifyRoborazziDebug assembleDebug --no-daemon 2>&1 | grep -E "FAILED|BUILD|error:" | head -8
-./gradlew installDebug --no-daemon 2>&1 | tail -1 && adb shell am start -n com.jaychoi.eattheland.debug/com.jaychoi.eattheland.MainActivity
-```
-Expected: 전부 성공. 기기: 스플래시 → 온보딩(소개) → 다음 → 권한 → 닉네임 입력 → 시작하기 → Map 스텁 화면. 앱을 죽이고 다시 켜면 바로 Map 스텁. Firebase 콘솔 `users` 에 문서 1개.
-
-- [ ] **Step 6: 커밋**
-
-```bash
-git add -A && git status --short
-git commit -m "$(cat <<'EOF'
-9/23 앱 루트 시작 분기(프로필 유무)·온보딩→지도 전환, 셀 스트림 TerritoryRepository
-
-Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>
-EOF
-)"
-```
+v1 Task 7 과 **동일** — 단, `:app` `dependencies` 추가 목록에서 Firebase 항목은 Task 3 에서 이미 넣었으므로 중복 추가하지 않는다. `CellDto`/`FirestoreCellDataSource`/`TerritoryRepository`/`AppRootViewModel`/`Navigator.replaceAll`/`EatTheLandApp`/`MainActivity` 는 v1 그대로. 커밋 메시지: `9/23 앱 루트 시작 분기(프로필 유무)·온보딩→지도 전환, 셀 스트림 TerritoryRepository`.
 
 ---
 
-### Task 8: `:feature:map` — Google 지도 + 영토 오버레이 + 내 정보 칩
+### Task 8: `:feature:map` — 카카오맵 + 영토 오버레이 + 내 정보 칩
 
 **Files:**
-- Delete: Task 1 템플릿 스텁 `feature/map/src/main/kotlin/com/jaychoi/eattheland/feature/map/{domain,data,model,di}/**`, `feature/map/src/test/kotlin/com/jaychoi/eattheland/feature/map/{FakeMapRepository,FakeMapRemoteDataSource,FakeMapLocalDataSource,DefaultMapRepositoryTest}.kt`, `feature/map/src/test/screenshots/*`
-- Rewrite: `feature/map/src/main/kotlin/com/jaychoi/eattheland/feature/map/ui/{MapUiState,MapViewModel,MapScreen,MapRoute}.kt` (`MapKey.kt` 유지)
-- Create: `feature/map/src/main/kotlin/com/jaychoi/eattheland/feature/map/ui/{TerritoryOverlay,MapStyle}.kt`, `feature/map/src/main/res/raw/map_style_dark.json`, `feature/map/src/main/res/values/strings.xml`
-- Create: `core/designsystem/src/main/kotlin/com/jaychoi/eattheland/core/designsystem/theme/TerritoryPalette.kt`
-- Rewrite: `feature/map/src/test/kotlin/com/jaychoi/eattheland/feature/map/{MapViewModelTest,MapScreenshotTest}.kt`
-- Modify: `feature/map/build.gradle.kts`, `app/build.gradle.kts`, `app/src/main/AndroidManifest.xml`, `core/designsystem/.../Color.kt`, `local.properties`(커밋 금지), `EatTheLandApp.kt`
+- Delete: 템플릿 스텁 `feature/map/src/main/kotlin/.../feature/map/{domain,data,model,di}/**`, `feature/map/src/test/.../{FakeMapRepository,FakeMapRemoteDataSource,FakeMapLocalDataSource,DefaultMapRepositoryTest}.kt`, `feature/map/src/test/screenshots/*`
+- Rewrite: `.../feature/map/ui/{MapUiState,MapViewModel,MapScreen,MapRoute}.kt` (`MapKey.kt` 유지)
+- Create: `.../feature/map/ui/KakaoMapView.kt`, `feature/map/src/main/res/values/strings.xml`
+- Create: `app/src/main/kotlin/com/jaychoi/eattheland/startup/KakaoMapInitializer.kt`
+- Create: `core/designsystem/.../theme/TerritoryPalette.kt`
+- Rewrite: `feature/map/src/test/.../{MapViewModelTest,MapScreenshotTest}.kt`
+- Modify: `settings.gradle.kts`(카카오 maven), `gradle/libs.versions.toml`, `feature/map/build.gradle.kts`, `app/build.gradle.kts`, `app/src/main/AndroidManifest.xml`, `core/designsystem/.../Color.kt`, `EatTheLandApp.kt`, `.github/workflows/android-ci.yml`, `local.properties`(커밋 금지)
 
 **Interfaces:**
 - Consumes: `TerritoryRepository`, `PlayerRepository`, `HexGrid`, `FakeTerritoryRepository`, `FakePlayerRepository`, `FakeHexGrid`
 - Produces:
-  - `data class MapUiState(val player: Player? = null, val cells: List<CellPolygon> = emptyList(), val isZoomedOut: Boolean = false, val hasLocationPermission: Boolean = false)`
-  - `data class CellPolygon(val id: CellId, val points: List<LatLngPoint>, val colorIndex: Int?, val isMine: Boolean)` — `colorIndex` null 이면 내 셀(primary)
+  - `data class MapUiState(val player: Player? = null, val cells: List<CellPolygon> = emptyList(), val isZoomedOut: Boolean = false)`
+  - `data class CellPolygon(val id: CellId, val points: List<LatLngPoint>, val colorIndex: Int?)` — null = 내 셀
   - `sealed interface MapEvent { data class CameraIdle(val center: LatLngPoint, val zoom: Float) }`
-  - `EntryProviderScope<NavKey>.mapEntry()` (파라미터 없음 — `:app` 호출부 갱신)
-  - `object TerritoryPalette { @Composable fun color(index: Int): Color }` (`:core:designsystem`, 7색)
+  - `EntryProviderScope<NavKey>.mapEntry()` (무인자 — `:app` 호출부 갱신)
+  - `object TerritoryPalette { @Composable fun color(index: Int?): Color }`
   - `const val MIN_OVERLAY_ZOOM = 14f`
+  - `KakaoMapView(cells: List<DrawableCell>, onCameraIdle: (LatLngPoint, Float) -> Unit, modifier)` + `data class DrawableCell(val id: String, val points: List<LatLngPoint>, val fillArgb: Int, val strokeArgb: Int)`
 
-- [ ] **Step 1: 스텁 삭제 + 의존성**
+- [ ] **Step 1: 스텁 삭제 + 저장소·의존성**
 
 ```bash
 cd ~/StudioProjects/Eat-the-land
 rm -rf feature/map/src/main/kotlin/com/jaychoi/eattheland/feature/map/{domain,data,model,di}
 rm -f feature/map/src/test/kotlin/com/jaychoi/eattheland/feature/map/{FakeMapRepository,FakeMapRemoteDataSource,FakeMapLocalDataSource,DefaultMapRepositoryTest}.kt
 rm -rf feature/map/src/test/screenshots
-ls feature/map/src/main/kotlin/com/jaychoi/eattheland/feature/map/ui
 ```
-Expected: `MapKey.kt MapRoute.kt MapScreen.kt MapUiState.kt MapViewModel.kt`
-
-`feature/map/build.gradle.kts` `dependencies` 를:
+`settings.gradle.kts` `dependencyResolutionManagement.repositories` 에 추가:
+```kotlin
+        maven { url = uri("https://devrepo.kakao.com/nexus/repository/kakaomap-releases/") }
+```
+`gradle/libs.versions.toml`: `[versions]` 에 `kakaoMaps = "2.15.2"` (`maps-compose`·`play-services-maps`·`googleServices` 는 두되 사용처 없음 — 다음 정리 때 삭제), `[libraries]` 에:
+```toml
+kakao-maps = { group = "com.kakao.maps.open", name = "android", version.ref = "kakaoMaps" }
+```
+`feature/map/build.gradle.kts` `dependencies`:
 ```kotlin
 dependencies {
     implementation(projects.core.common)
     implementation(projects.core.model)
     implementation(projects.core.data)
     implementation(projects.core.designsystem)
-    implementation(libs.maps.compose)
-    implementation(libs.play.services.maps)
+    implementation(libs.kakao.maps)
     testImplementation(projects.core.testing)
 }
 ```
 
-- [ ] **Step 2: Maps API 키 (사용자 수동 + 빌드 주입, R-31-08)**
+- [ ] **Step 2: 카카오 네이티브 앱 키 (사용자 수동 + BuildConfig 주입, R-19-14)**
 
-사용자에게 요청: Google Cloud 콘솔(Firebase 프로젝트와 같은 GCP 프로젝트) → API 및 서비스 → "Maps SDK for Android" 사용 설정 → 사용자 인증 정보 → API 키 생성 → 애플리케이션 제한 "Android 앱", 패키지 `com.jaychoi.eattheland`·`com.jaychoi.eattheland.debug` + 디버그 SHA-1(`./gradlew signingReport | grep SHA1 | head -1`) 등록.
+바탕화면 체크리스트 ② 완료 확인:
+```bash
+grep -c '^KAKAO_NATIVE_APP_KEY=' local.properties
+```
+Expected: `1`
 
-`local.properties` 에 (커밋 금지):
-```
-MAPS_API_KEY=AIza...
-```
-
-`app/build.gradle.kts` `android { defaultConfig { ... } }` 안에:
-```kotlin
-        // Maps SDK 키는 local.properties → 매니페스트 placeholder. CI 는 MAPS_API_KEY 환경변수 (R-31-08).
-        manifestPlaceholders["MAPS_API_KEY"] = mapsApiKey()
-```
-파일 상단(plugins 아래)에:
+`app/build.gradle.kts`:
+- 파일 상단(plugins 아래):
 ```kotlin
 import java.util.Properties
 
-fun Project.mapsApiKey(): String {
+fun Project.localProperty(name: String): String {
     val props = Properties().apply {
         rootProject.file("local.properties").takeIf { it.exists() }?.inputStream()?.use { load(it) }
     }
-    return (props["MAPS_API_KEY"] as String?) ?: System.getenv("MAPS_API_KEY") ?: ""
+    return (props[name] as String?) ?: System.getenv(name) ?: ""
 }
 ```
-`app/src/main/AndroidManifest.xml` `<application>` 안에:
+- `android {}` 안:
+```kotlin
+    // 카카오맵 네이티브 앱 키. local.properties → BuildConfig, CI 는 KAKAO_NATIVE_APP_KEY 환경변수 (R-19-13, R-19-14, R-31-08).
+    buildFeatures { buildConfig = true }
+    defaultConfig {
+        buildConfigField("String", "KAKAO_NATIVE_APP_KEY", "\"${localProperty("KAKAO_NATIVE_APP_KEY")}\"")
+    }
+```
+(`defaultConfig` 블록이 이미 있으므로 그 안에 `buildConfigField` 한 줄만 넣는다.)
+- `dependencies` 에 `implementation(libs.kakao.maps)`.
+
+`app/src/main/kotlin/com/jaychoi/eattheland/startup/KakaoMapInitializer.kt`:
+```kotlin
+package com.jaychoi.eattheland.startup
+
+import android.content.Context
+import androidx.startup.Initializer
+import com.jaychoi.eattheland.BuildConfig
+import com.kakao.vectormap.KakaoMapSdk
+
+/** 카카오맵 SDK 초기화. 앱 키는 :app 의 BuildConfig 만 안다 (R-19-14). */
+class KakaoMapInitializer : Initializer<Unit> {
+    override fun create(context: Context) {
+        KakaoMapSdk.init(context, BuildConfig.KAKAO_NATIVE_APP_KEY)
+    }
+
+    override fun dependencies(): List<Class<out Initializer<*>>> = emptyList()
+}
+```
+매니페스트 `InitializationProvider` 의 `meta-data` 에 한 줄 추가:
 ```xml
-        <meta-data
-            android:name="com.google.android.geo.API_KEY"
-            android:value="${MAPS_API_KEY}" />
+            <meta-data
+                android:name="com.jaychoi.eattheland.startup.KakaoMapInitializer"
+                android:value="androidx.startup" />
 ```
-`.github/workflows/android-ci.yml` 의 `assemble` 스텝에 `env: { MAPS_API_KEY: ${{ secrets.MAPS_API_KEY }} }` 추가 (없으면 빈 문자열이라 빌드는 통과, 지도만 안 뜸).
+`.github/workflows/android-ci.yml` `assemble` 스텝에 `env: { KAKAO_NATIVE_APP_KEY: ${{ secrets.KAKAO_NATIVE_APP_KEY }} }`.
 
-- [ ] **Step 3: 영토 팔레트 (`:core:designsystem`, 스펙 §6)**
+- [ ] **Step 3: 영토 팔레트 + 브랜드 색** — v1 Task 8 Step 3 과 동일 (`Color.kt` 스킴 교체, `TerritoryPalette.kt`).
 
-`core/designsystem/.../theme/Color.kt` 의 4개 자리표시자 값을 교체하고 스킴을 스펙 §6으로:
-```kotlin
-private val BrandPrimaryLight = Color(0xFF16A34A)
-private val BrandPrimaryDark = Color(0xFF4ADE80)
-private val OnPrimaryLight = Color(0xFFFFFFFF)
-private val OnPrimaryDark = Color(0xFF052E16)
-private val BackgroundLight = Color(0xFFF8FAFC)
-private val BackgroundDark = Color(0xFF0F172A)
-private val SurfaceContainerLight = Color(0xFFFFFFFF)
-private val SurfaceContainerDark = Color(0xFF1E293B)
-private val OnSurfaceLight = Color(0xFF0F172A)
-private val OnSurfaceDark = Color(0xFFF1F5F9)
-private val ErrorLight = Color(0xFFDC2626)
-private val ErrorDark = Color(0xFFF87171)
+- [ ] **Step 4: UiState·Event + ViewModel 테스트 (RED)** — v1 Task 8 Step 4 와 동일 (SDK 무관).
 
-internal val LightColorScheme = lightColorScheme(
-    primary = BrandPrimaryLight, onPrimary = OnPrimaryLight,
-    background = BackgroundLight, surface = BackgroundLight,
-    surfaceContainer = SurfaceContainerLight, onSurface = OnSurfaceLight, error = ErrorLight,
-)
+- [ ] **Step 5: ViewModel 구현 (GREEN)** — v1 Task 8 Step 5 와 동일.
 
-internal val DarkColorScheme = darkColorScheme(
-    primary = BrandPrimaryDark, onPrimary = OnPrimaryDark,
-    background = BackgroundDark, surface = BackgroundDark,
-    surfaceContainer = SurfaceContainerDark, onSurface = OnSurfaceDark, error = ErrorDark,
-)
-```
-
-`theme/TerritoryPalette.kt`:
-```kotlin
-package com.jaychoi.eattheland.core.designsystem.theme
-
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.runtime.Composable
-import androidx.compose.ui.graphics.Color
-
-/**
- * 유저별 영토 색 7종. 유저 `color` 인덱스(0..6)로 고른다. 내 셀은 항상 primary (스펙 §6).
- * `theme/` 의 공개 API 는 AppTheme 하나라는 R-18-10 을 벗어나므로 표준 준수 보고에 적는다 —
- * 지도 오버레이는 시맨틱 역할로 표현할 수 없는 "데이터 색"이라 별도 진입점이 필요하다.
- */
-object TerritoryPalette {
-    private val colors = listOf(
-        Color(0xFFFF5C8A), Color(0xFFFFB020), Color(0xFF3BC9DB), Color(0xFF9B6BFF),
-        Color(0xFFFF7A3D), Color(0xFFF472B6), Color(0xFF38BDF8),
-    )
-
-    val size: Int get() = colors.size
-
-    /** index 가 null 이면 내 영토색(primary). */
-    @Composable
-    fun color(index: Int?): Color = if (index == null) MaterialTheme.colorScheme.primary else colors[index.mod(colors.size)]
-}
-```
-
-- [ ] **Step 4: UiState·Event + ViewModel 테스트 (Review Focus 4)**
-
-`ui/MapUiState.kt`:
-```kotlin
-package com.jaychoi.eattheland.feature.map.ui
-
-import com.jaychoi.eattheland.core.model.CellId
-import com.jaychoi.eattheland.core.model.LatLngPoint
-import com.jaychoi.eattheland.core.model.Player
-
-const val MIN_OVERLAY_ZOOM = 14f
-
-data class CellPolygon(
-    val id: CellId,
-    val points: List<LatLngPoint>,
-    /** null = 내 셀 */
-    val colorIndex: Int?,
-)
-
-data class MapUiState(
-    val player: Player? = null,
-    val cells: List<CellPolygon> = emptyList(),
-    /** 줌이 MIN_OVERLAY_ZOOM 미만 — 리스너를 걸지 않고 안내 문구를 띄운다 */
-    val isZoomedOut: Boolean = false,
-)
-
-sealed interface MapEvent {
-    data class CameraIdle(val center: LatLngPoint, val zoom: Float) : MapEvent
-}
-```
-
-`feature/map/src/test/kotlin/com/jaychoi/eattheland/feature/map/MapViewModelTest.kt`:
-```kotlin
-package com.jaychoi.eattheland.feature.map
-
-import app.cash.turbine.test
-import com.jaychoi.eattheland.core.model.Cell
-import com.jaychoi.eattheland.core.model.CellId
-import com.jaychoi.eattheland.core.model.LatLngPoint
-import com.jaychoi.eattheland.core.model.Player
-import com.jaychoi.eattheland.core.testing.FakeHexGrid
-import com.jaychoi.eattheland.core.testing.FakePlayerRepository
-import com.jaychoi.eattheland.core.testing.FakeTerritoryRepository
-import com.jaychoi.eattheland.core.testing.MainDispatcherRule
-import com.jaychoi.eattheland.feature.map.ui.MapEvent
-import com.jaychoi.eattheland.feature.map.ui.MapViewModel
-import kotlinx.coroutines.test.runTest
-import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNull
-import org.junit.Assert.assertTrue
-import org.junit.Rule
-import org.junit.Test
-
-class MapViewModelTest {
-    @get:Rule val mainDispatcherRule = MainDispatcherRule()
-
-    private val territory = FakeTerritoryRepository()
-    private val players = FakePlayerRepository()
-    private val grid = FakeHexGrid()
-    private val seoul = LatLngPoint(37.5665, 126.9780)
-
-    private fun viewModel() = MapViewModel(territory, players, grid)
-
-    @Test
-    fun `카메라가 멈추면 그 region 의 셀을 구독하고 폴리곤으로 바꾼다`() = runTest {
-        val me = Player("me", "나", 0, 3)
-        players.playerFlow.value = me
-        val mine = grid.cellOf(seoul)
-        val other = grid.cellOf(LatLngPoint(37.5671, 126.9780))
-        territory.cells.value = listOf(
-            Cell(mine, "me", 0, 0, grid.regionOf(mine)),
-            Cell(other, "u2", 4, 0, grid.regionOf(other)),
-        )
-        val vm = viewModel()
-        vm.uiState.test {
-            vm.initialize()
-            vm.onEvent(MapEvent.CameraIdle(seoul, zoom = 16f))
-            val state = awaitItemUntil { it.cells.size == 2 }
-            assertEquals(listOf(grid.regionOf(mine)).toSet(), territory.requestedRegions.last())
-            assertNull(state.cells.first { it.id == mine }.colorIndex)
-            assertEquals(4, state.cells.first { it.id == other }.colorIndex)
-            assertEquals(me, state.player)
-        }
-    }
-
-    @Test
-    fun `줌 14 미만이면 구독하지 않고 isZoomedOut`() = runTest {
-        val vm = viewModel()
-        vm.initialize()
-        vm.onEvent(MapEvent.CameraIdle(seoul, zoom = 13.9f))
-        assertTrue(vm.uiState.value.isZoomedOut)
-        assertTrue(vm.uiState.value.cells.isEmpty())
-        assertTrue(territory.requestedRegions.isEmpty())
-    }
-
-    @Test
-    fun `같은 region 안에서 카메라가 움직이면 재구독하지 않는다`() = runTest {
-        val vm = viewModel()
-        vm.uiState.test {
-            vm.initialize()
-            vm.onEvent(MapEvent.CameraIdle(seoul, zoom = 16f))
-            vm.onEvent(MapEvent.CameraIdle(LatLngPoint(37.5666, 126.9781), zoom = 17f))
-            cancelAndIgnoreRemainingEvents()
-        }
-        assertEquals(1, territory.requestedRegions.size)
-    }
-}
-
-/** turbine 보조: 조건을 만족하는 첫 아이템까지 소비한다. */
-private suspend fun <T> app.cash.turbine.ReceiveTurbine<T>.awaitItemUntil(predicate: (T) -> Boolean): T {
-    while (true) {
-        val item = awaitItem()
-        if (predicate(item)) return item
-    }
-}
-```
-```bash
-./gradlew :feature:map:testDebugUnitTest --no-daemon 2>&1 | grep -E "error:|BUILD" | head -3
-```
-Expected: 컴파일 실패.
-
-- [ ] **Step 5: ViewModel 구현**
-
-`ui/MapViewModel.kt`:
-```kotlin
-package com.jaychoi.eattheland.feature.map.ui
-
-import androidx.lifecycle.ViewModel
-import androidx.lifecycle.viewModelScope
-import com.jaychoi.eattheland.core.common.grid.HexGrid
-import com.jaychoi.eattheland.core.data.PlayerRepository
-import com.jaychoi.eattheland.core.data.TerritoryRepository
-import com.jaychoi.eattheland.core.model.Cell
-import com.jaychoi.eattheland.core.model.CellId
-import com.jaychoi.eattheland.core.model.Player
-import dagger.hilt.android.lifecycle.HiltViewModel
-import javax.inject.Inject
-import kotlinx.coroutines.ExperimentalCoroutinesApi
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.flow.flatMapLatest
-import kotlinx.coroutines.flow.flowOf
-import kotlinx.coroutines.flow.launchIn
-import kotlinx.coroutines.flow.onEach
-import kotlinx.coroutines.flow.update
-
-/**
- * R-12-02: 플랜 B 에서 추적 중/아님 상태가 생기면 "상태별 허용 이벤트 다름" 1개 해당 → 여전히 MVVM-UDF.
- * 뷰포트 → region 집합은 값이 바뀔 때만 재구독한다(flatMapLatest + StateFlow 중복 제거).
- */
-@HiltViewModel
-class MapViewModel @Inject constructor(
-    private val territory: TerritoryRepository,
-    private val players: PlayerRepository,
-    private val grid: HexGrid,
-) : ViewModel() {
-
-    private val _uiState = MutableStateFlow(MapUiState())
-    val uiState: StateFlow<MapUiState> = _uiState.asStateFlow()
-
-    private val regions = MutableStateFlow<Set<CellId>>(emptySet())
-    private var initialized = false
-
-    @OptIn(ExperimentalCoroutinesApi::class)
-    fun initialize() {
-        if (initialized) return
-        initialized = true
-        val cells = regions.flatMapLatest { if (it.isEmpty()) flowOf(emptyList()) else territory.observeCells(it) }
-        combine(cells, players.currentPlayer) { list, player -> list to player }
-            .onEach { (list, player) ->
-                _uiState.update { it.copy(player = player, cells = list.map { c -> c.toPolygon(player) }) }
-            }
-            .launchIn(viewModelScope)
-    }
-
-    fun onEvent(event: MapEvent) {
-        when (event) {
-            is MapEvent.CameraIdle -> onCameraIdle(event)
-        }
-    }
-
-    private fun onCameraIdle(event: MapEvent.CameraIdle) {
-        val zoomedOut = event.zoom < MIN_OVERLAY_ZOOM
-        _uiState.update { it.copy(isZoomedOut = zoomedOut) }
-        regions.value = if (zoomedOut) emptySet() else grid.regionsAround(event.center)
-    }
-
-    private fun Cell.toPolygon(me: Player?) = CellPolygon(
-        id = id,
-        points = grid.boundary(id),
-        colorIndex = if (me != null && ownerUid == me.uid) null else ownerColor,
-    )
-}
-```
-```bash
-./gradlew :feature:map:testDebugUnitTest --no-daemon 2>&1 | grep -E "FAILED|BUILD" | head -5
-```
-Expected: `BUILD SUCCESSFUL`, 3개 통과.
-
-- [ ] **Step 6: 지도 스타일·문자열·오버레이·Screen·Route**
+- [ ] **Step 6: 문자열·KakaoMapView·Screen·Route**
 
 `feature/map/src/main/res/values/strings.xml`:
 ```xml
@@ -2832,162 +1424,143 @@ Expected: `BUILD SUCCESSFUL`, 3개 통과.
 <resources>
     <string name="map_zoomed_out_hint">확대하면 영토가 보여요</string>
     <string name="map_stat_cells">%1$s · %2$d칸</string>
-    <string name="map_my_location">내 위치</string>
 </resources>
 ```
 
-`feature/map/src/main/res/raw/map_style_dark.json` (Google 야간 스타일 축약본):
-```json
-[
-  { "elementType": "geometry", "stylers": [{ "color": "#1d2c4d" }] },
-  { "elementType": "labels.text.fill", "stylers": [{ "color": "#8ec3b9" }] },
-  { "elementType": "labels.text.stroke", "stylers": [{ "color": "#1a3646" }] },
-  { "featureType": "administrative", "elementType": "geometry.stroke", "stylers": [{ "color": "#4b6878" }] },
-  { "featureType": "landscape.natural", "elementType": "geometry", "stylers": [{ "color": "#023e58" }] },
-  { "featureType": "poi", "elementType": "geometry", "stylers": [{ "color": "#283d6a" }] },
-  { "featureType": "poi", "elementType": "labels.text.fill", "stylers": [{ "color": "#6f9ba5" }] },
-  { "featureType": "poi.park", "elementType": "geometry.fill", "stylers": [{ "color": "#023e58" }] },
-  { "featureType": "road", "elementType": "geometry", "stylers": [{ "color": "#304a7d" }] },
-  { "featureType": "road", "elementType": "labels.text.fill", "stylers": [{ "color": "#98a5be" }] },
-  { "featureType": "road.highway", "elementType": "geometry", "stylers": [{ "color": "#2c6675" }] },
-  { "featureType": "transit", "elementType": "labels.text.fill", "stylers": [{ "color": "#98a5be" }] },
-  { "featureType": "water", "elementType": "geometry", "stylers": [{ "color": "#0e1626" }] },
-  { "featureType": "water", "elementType": "labels.text.fill", "stylers": [{ "color": "#4e6d70" }] }
-]
-```
-
-`ui/TerritoryOverlay.kt`:
+`ui/KakaoMapView.kt`:
 ```kotlin
 package com.jaychoi.eattheland.feature.map.ui
 
 import androidx.compose.runtime.Composable
-import com.google.android.gms.maps.model.LatLng
-import com.google.maps.android.compose.Polygon
-import com.jaychoi.eattheland.core.designsystem.theme.TerritoryPalette
-
-private const val FILL_ALPHA = 0.4f
-private const val STROKE_WIDTH_PX = 4f
-
-/** GoogleMap 콘텐츠 람다 안에서 호출한다. 셀 채움 40% + 테두리 (스펙 §6). */
-@Composable
-fun TerritoryOverlay(cells: List<CellPolygon>) {
-    cells.forEach { cell ->
-        val color = TerritoryPalette.color(cell.colorIndex)
-        Polygon(
-            points = cell.points.map { LatLng(it.lat, it.lng) },
-            fillColor = color.copy(alpha = FILL_ALPHA),
-            strokeColor = color,
-            strokeWidth = STROKE_WIDTH_PX,
-        )
-    }
-}
-```
-
-`ui/MapStyle.kt`:
-```kotlin
-package com.jaychoi.eattheland.feature.map.ui
-
-import androidx.compose.foundation.isSystemInDarkTheme
-import androidx.compose.runtime.Composable
-import androidx.compose.ui.platform.LocalContext
-import com.google.android.gms.maps.model.MapStyleOptions
-import com.jaychoi.eattheland.feature.map.R
-
-/** 다크일 때만 야간 스타일 (스펙 §6). */
-@Composable
-fun rememberMapStyle(): MapStyleOptions? {
-    val context = LocalContext.current
-    return if (isSystemInDarkTheme()) MapStyleOptions.loadRawResourceStyle(context, R.raw.map_style_dark) else null
-}
-```
-
-`ui/MapScreen.kt` (지도는 슬롯으로 받아 스크린샷 테스트가 지도 없이 찍을 수 있게 한다):
-```kotlin
-package com.jaychoi.eattheland.feature.map.ui
-
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
-import androidx.compose.ui.Alignment
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.tooling.preview.Preview
-import androidx.compose.ui.unit.dp
-import com.jaychoi.eattheland.core.designsystem.theme.AppTheme
-import com.jaychoi.eattheland.core.model.Player
-import com.jaychoi.eattheland.feature.map.R
+import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.compose.ui.viewinterop.AndroidView
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import com.jaychoi.eattheland.core.model.LatLngPoint
+import com.kakao.vectormap.KakaoMap
+import com.kakao.vectormap.KakaoMapReadyCallback
+import com.kakao.vectormap.LatLng
+import com.kakao.vectormap.MapLifeCycleCallback
+import com.kakao.vectormap.MapView
+import com.kakao.vectormap.camera.CameraUpdateFactory
+import com.kakao.vectormap.shape.MapPoints
+import com.kakao.vectormap.shape.PolygonOptions
 
+/** 지도에 그릴 셀. 색은 컴포저블 스코프에서 ARGB 로 미리 바꿔 넘긴다(View 세계는 MaterialTheme 을 모른다). */
+data class DrawableCell(val id: String, val points: List<LatLngPoint>, val fillArgb: Int, val strokeArgb: Int)
+
+private const val STROKE_WIDTH_PX = 2
+
+/**
+ * 카카오맵 SDK v2 는 Compose 를 지원하지 않아 AndroidView 로 감싼다.
+ * resume/pause/finish 를 라이프사이클에 맞추지 않으면 SDK 가 크래시한다(공식 주의사항).
+ */
 @Composable
-fun MapScreen(
-    uiState: MapUiState,
+fun KakaoMapView(
+    cells: List<DrawableCell>,
+    initialCenter: LatLngPoint,
+    initialZoom: Int,
+    onCameraIdle: (LatLngPoint, Float) -> Unit,
     modifier: Modifier = Modifier,
-    map: @Composable () -> Unit,
 ) {
-    Box(modifier = modifier.fillMaxSize()) {
-        map()
-        uiState.player?.let { player ->
-            Surface(
-                modifier = Modifier.align(Alignment.TopCenter).padding(16.dp),
-                shape = MaterialTheme.shapes.large,
-                color = MaterialTheme.colorScheme.surfaceContainer,
-                tonalElevation = 2.dp,
-            ) {
-                Text(
-                    text = stringResource(R.string.map_stat_cells, player.nickname, player.cellCount),
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-                    style = MaterialTheme.typography.titleMedium,
-                )
+    val lifecycleOwner = LocalLifecycleOwner.current
+    val holder = remember { MapHolder() }
+
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            when (event) {
+                Lifecycle.Event.ON_RESUME -> holder.mapView?.resume()
+                Lifecycle.Event.ON_PAUSE -> holder.mapView?.pause()
+                else -> Unit
             }
         }
-        if (uiState.isZoomedOut) {
-            Surface(
-                modifier = Modifier.align(Alignment.BottomCenter).padding(24.dp),
-                shape = MaterialTheme.shapes.large,
-                color = MaterialTheme.colorScheme.surfaceContainer,
-            ) {
-                Text(
-                    text = stringResource(R.string.map_zoomed_out_hint),
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-                )
-            }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+            holder.mapView?.finish()
         }
     }
+
+    AndroidView(
+        modifier = modifier,
+        factory = { context ->
+            MapView(context).also { view ->
+                holder.mapView = view
+                view.start(
+                    object : MapLifeCycleCallback() {
+                        override fun onMapDestroy() = Unit
+
+                        override fun onMapError(error: Exception) = Unit
+                    },
+                    object : KakaoMapReadyCallback() {
+                        override fun onMapReady(map: KakaoMap) {
+                            holder.map = map
+                            map.setOnCameraMoveEndListener { _, position, _ ->
+                                onCameraIdle(
+                                    LatLngPoint(position.position.latitude, position.position.longitude),
+                                    position.zoomLevel.toFloat(),
+                                )
+                            }
+                            holder.draw(cells)
+                        }
+
+                        override fun getPosition(): LatLng = LatLng.from(initialCenter.lat, initialCenter.lng)
+
+                        override fun getZoomLevel(): Int = initialZoom
+                    },
+                )
+            }
+        },
+        update = { holder.draw(cells) },
+    )
 }
 
-@Preview
-@Composable
-private fun MapScreenPreview() {
-    AppTheme { MapScreen(MapUiState(player = Player("u", "땅주인", 0, 42), isZoomedOut = true)) { } }
+/** MapView·KakaoMap 참조와 현재 그려진 셀 ID 를 들고, 바뀐 것만 다시 그린다. */
+private class MapHolder {
+    var mapView: MapView? = null
+    var map: KakaoMap? = null
+    private var drawn: List<DrawableCell> = emptyList()
+
+    fun draw(cells: List<DrawableCell>) {
+        val map = map ?: return
+        if (cells == drawn) return
+        val layer = map.shapeManager?.layer ?: return
+        layer.removeAll()
+        cells.forEach { cell ->
+            val ring = cell.points.map { LatLng.from(it.lat, it.lng) }
+            val closed = if (ring.first() == ring.last()) ring else ring + ring.first()
+            layer.addPolygon(PolygonOptions.from(MapPoints.fromLatLng(closed), cell.fillArgb, STROKE_WIDTH_PX, cell.strokeArgb))
+        }
+        drawn = cells
+    }
 }
 ```
+> 검증 포인트(실기기): `position.zoomLevel` 의 범위가 Google 과 같은 0~21 계열인지 확인해 `MIN_OVERLAY_ZOOM`·`initialZoom` 을 맞춘다. 다르면 이 두 상수만 조정하고 레저에 기록.
+
+`ui/MapScreen.kt`: v1 과 동일 (지도 슬롯 `map: @Composable () -> Unit`).
 
 `ui/MapRoute.kt`:
 ```kotlin
 package com.jaychoi.eattheland.feature.map.ui
 
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.remember
-import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.toArgb
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation3.runtime.EntryProviderScope
 import androidx.navigation3.runtime.NavKey
-import com.google.android.gms.maps.model.CameraPosition
-import com.google.android.gms.maps.model.LatLng
-import com.google.maps.android.compose.GoogleMap
-import com.google.maps.android.compose.MapProperties
-import com.google.maps.android.compose.MapUiSettings
-import com.google.maps.android.compose.rememberCameraPositionState
+import com.jaychoi.eattheland.core.designsystem.theme.TerritoryPalette
 import com.jaychoi.eattheland.core.model.LatLngPoint
 
-private val DEFAULT_CENTER = LatLng(37.5665, 126.9780) // 서울시청. 위치 권한·현재 위치 연동은 플랜 B
-private const val DEFAULT_ZOOM = 16f
+private val DEFAULT_CENTER = LatLngPoint(37.5665, 126.9780) // 서울시청. 현재 위치 연동은 플랜 B
+private const val DEFAULT_ZOOM = 16
+private const val FILL_ALPHA = 0.4f
 
 fun EntryProviderScope<NavKey>.mapEntry() {
     entry<MapKey> { MapRoute() }
@@ -2998,93 +1571,42 @@ internal fun MapRoute(viewModel: MapViewModel = hiltViewModel()) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     LaunchedEffect(viewModel) { viewModel.initialize() }
 
-    val cameraPositionState = rememberCameraPositionState {
-        position = CameraPosition.fromLatLngZoom(DEFAULT_CENTER, DEFAULT_ZOOM)
+    val drawable = uiState.cells.map { cell ->
+        val color = TerritoryPalette.color(cell.colorIndex)
+        DrawableCell(
+            id = cell.id.value,
+            points = cell.points,
+            fillArgb = color.copy(alpha = FILL_ALPHA).toArgb(),
+            strokeArgb = color.toArgb(),
+        )
     }
-    LaunchedEffect(cameraPositionState.isMoving) {
-        if (!cameraPositionState.isMoving) {
-            val target = cameraPositionState.position.target
-            viewModel.onEvent(MapEvent.CameraIdle(LatLngPoint(target.latitude, target.longitude), cameraPositionState.position.zoom))
-        }
-    }
-    val style = rememberMapStyle()
-    val properties = remember(style) { MapProperties(mapStyleOptions = style) }
-    val uiSettings = remember { MapUiSettings(zoomControlsEnabled = false, mapToolbarEnabled = false) }
 
     MapScreen(uiState = uiState) {
-        GoogleMap(
-            modifier = Modifier,
-            cameraPositionState = cameraPositionState,
-            properties = properties,
-            uiSettings = uiSettings,
-        ) {
-            TerritoryOverlay(uiState.cells)
-        }
+        KakaoMapView(
+            cells = drawable,
+            initialCenter = DEFAULT_CENTER,
+            initialZoom = DEFAULT_ZOOM,
+            onCameraIdle = { center, zoom -> viewModel.onEvent(MapEvent.CameraIdle(center, zoom)) },
+        )
     }
 }
 ```
-
 `EatTheLandApp.kt` 의 `mapEntry(onBack = { navigator.goBack() })` → `mapEntry()`.
 
-- [ ] **Step 7: 스크린샷 테스트 (지도 슬롯 비움)**
+- [ ] **Step 7: 스크린샷 테스트** — v1 Task 8 Step 7 과 동일 (지도 슬롯은 색 박스).
 
-`feature/map/src/test/kotlin/com/jaychoi/eattheland/feature/map/MapScreenshotTest.kt`:
-```kotlin
-package com.jaychoi.eattheland.feature.map
+- [ ] **Step 8: 시드 데이터 + 실기기 확인**
 
-import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.test.junit4.v2.createComposeRule
-import androidx.compose.ui.test.onRoot
-import androidx.test.ext.junit.runners.AndroidJUnit4
-import com.github.takahirom.roborazzi.captureRoboImage
-import com.jaychoi.eattheland.core.designsystem.theme.AppTheme
-import com.jaychoi.eattheland.core.model.Player
-import com.jaychoi.eattheland.feature.map.ui.MapScreen
-import com.jaychoi.eattheland.feature.map.ui.MapUiState
-import org.junit.Rule
-import org.junit.Test
-import org.junit.runner.RunWith
-import org.robolectric.annotation.Config
-import org.robolectric.annotation.GraphicsMode
+시드는 Admin SDK + 서비스 계정 키로 넣는다 (Spark 에서도 무료). 사용자 수동: Firebase 콘솔 → 프로젝트 설정 → 서비스 계정 → "새 비공개 키 생성" → 파일을 `~/StudioProjects/Eat-the-land/rules/serviceAccount.json` 로 저장 (`.gitignore` 에 `rules/serviceAccount.json` 추가).
 
-@RunWith(AndroidJUnit4::class)
-@GraphicsMode(GraphicsMode.Mode.NATIVE)
-@Config(sdk = [35])
-class MapScreenshotTest {
-    @get:Rule val composeRule = createComposeRule()
-
-    private fun capture(state: MapUiState) {
-        composeRule.setContent {
-            AppTheme {
-                MapScreen(state) { Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surfaceContainer)) }
-            }
-        }
-        composeRule.onRoot().captureRoboImage()
-    }
-
-    @Test fun with_player() = capture(MapUiState(player = Player("u", "땅주인", 0, 42)))
-
-    @Test fun zoomed_out() = capture(MapUiState(player = Player("u", "땅주인", 0, 42), isZoomedOut = true))
-}
-```
-```bash
-./gradlew ktlintFormat --no-daemon 2>&1 | tail -1
-./gradlew :feature:map:recordRoborazziDebug --no-daemon 2>&1 | grep -E "FAILED|BUILD" | head -3
-```
-
-- [ ] **Step 8: 시드 데이터 + 기기 확인**
-
-`functions/scripts/seed.ts` (개발용, 내 위치 주변 셀 3개를 다른 유저 소유로 심는다):
+`rules/scripts/seed.ts`:
 ```ts
-import { initializeApp, applicationDefault } from 'firebase-admin/app';
+import { cert, initializeApp } from 'firebase-admin/app';
 import { getFirestore, Timestamp } from 'firebase-admin/firestore';
-import { latLngToCell, cellToParent } from 'h3-js';
+import { cellToParent, latLngToCell } from 'h3-js';
+import { resolve } from 'path';
 
-initializeApp({ credential: applicationDefault(), projectId: 'eat-the-land' });
+initializeApp({ credential: cert(resolve(__dirname, '../serviceAccount.json')) });
 const [lat, lng] = process.argv.slice(2).map(Number);
 if (!Number.isFinite(lat) || !Number.isFinite(lng)) { console.error('usage: npm run seed -- <lat> <lng>'); process.exit(1); }
 const db = getFirestore();
@@ -3097,23 +1619,22 @@ const db = getFirestore();
   }
 })();
 ```
-`functions/package.json` scripts 에 `"seed": "npx ts-node scripts/seed.ts"` 추가, devDependencies 에 `"ts-node": "^10.9.0"`. `functions/tsconfig.json` 의 `include` 는 `["src"]` 그대로(스크립트는 빌드 산출물에 안 들어감).
-
+`rules/package.json` scripts 에 `"seed": "ts-node scripts/seed.ts"`, dependencies 에 `"firebase-admin": "^13.0.0"`, `"h3-js": "^4.2.0"`, devDependencies 에 `"ts-node": "^10.9.0"`.
 ```bash
-cd functions && npm install 2>&1 | tail -1
-gcloud auth application-default login   # 없으면 firebase 콘솔 서비스계정 키를 GOOGLE_APPLICATION_CREDENTIALS 로
-npm run seed -- 37.5665 126.9780
-cd .. && ./gradlew installDebug --no-daemon 2>&1 | tail -1 && adb shell am start -n com.jaychoi.eattheland.debug/com.jaychoi.eattheland.MainActivity
+cd rules && npm install 2>&1 | tail -1 && npm run seed -- 37.5665 126.9780 && cd ..
+adb devices   # arm64 실기기가 보여야 한다
+./gradlew installDebug --no-daemon 2>&1 | tail -1 && adb shell am start -n com.jaychoi.eattheland.debug/com.jaychoi.eattheland.MainActivity
 ```
-Expected: 다크 지도 위 서울시청 주변에 육각형 3개(분홍·주황·시안). 콘솔에서 셀 하나의 `ownerColor`를 바꾸면 앱에서 즉시 색이 바뀜. 줌 아웃(13 이하)하면 육각형이 사라지고 "확대하면 영토가 보여요".
+Expected: 카카오 지도 위 서울시청 주변에 육각형 3개(분홍·주황·시안). 콘솔에서 `ownerColor` 를 바꾸면 즉시 반영. 줌 아웃하면 "확대하면 영토가 보여요".
 
 - [ ] **Step 9: 전체 게이트 + 커밋**
 
 ```bash
+./gradlew ktlintFormat --no-daemon 2>&1 | tail -1
 ./gradlew ktlintCheck detektDebug testDebugUnitTest verifyRoborazziDebug assembleDebug --no-daemon 2>&1 | grep -E "FAILED|BUILD|error:" | head -8
-git add -A && git status --short | grep -E "local.properties|google-services" && echo "!! 커밋 금지" || true
+git add -A && git status --short | grep -E "local.properties|google-services|serviceAccount" && echo "!! 커밋 금지" || true
 git commit -m "$(cat <<'EOF'
-9/23 :feature:map Google 지도·H3 영토 오버레이·내 정보 칩, 브랜드 색·영토 팔레트
+9/23 :feature:map 카카오맵·H3 영토 오버레이·내 정보 칩, 브랜드 색·영토 팔레트
 
 Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>
 EOF
@@ -3124,37 +1645,12 @@ EOF
 
 ### Task 9: 플랜 A 마무리 — 표준 준수 보고 · 푸시
 
-**Files:**
-- Create: `docs/superpowers/reports/2026-09-23-plan-a-standards-report.md`
-
-- [ ] **Step 1: 팩 review 체크리스트 실행**
-
-`~/.claude/skills/android-standards/checklists/review.md` 를 읽고 항목대로 점검. 결과를 아래 표로 `docs/superpowers/reports/2026-09-23-plan-a-standards-report.md` 에 쓴다:
-
-| 항목 | 내용 |
-|---|---|
-| 요청 유형 | new-app |
-| 모듈 위치 | `:app`, `:core:{common,model,network,data,domain,designsystem,testing}`, `:feature:{onboarding,map}` (R-10-01 모듈 유형 셋 한정, R-10-04 배치는 사용 모듈 수) |
-| 네비게이션 | 백스택은 `:app` `EatTheLandApp` 의 `rememberNavBackStack` 하나, 시작 키 `MapKey`/`OnboardingKey`(프로필 유무) (R-13-03 백스택 :app 소유) |
-| 상태 아키텍처 | Onboarding 0/5, Map 0/5 (플랜 B 후 1/5) → MVVM-UDF (R-12-02) |
-| UseCase | `ValidateNicknameUseCase` — 규칙 로직 + 두 화면 공유 (R-16-02 로직 있을 때만, R-16-07 공유 시 승격). Repository 직접 호출: AppRoot·Map |
-| 테스트 | ArchitectureTest 6, FakeHexGridTest 2, ValidateNicknameUseCaseTest 2, DefaultPlayerRepositoryTest 4, CellDtoTest 3, OnboardingViewModelTest 7, AppRootViewModelTest 1, MapViewModelTest 3, 스크린샷 5 (R-30-03 화면마다 스크린샷) |
-| CI | `.github/workflows/android-ci.yml` 4게이트 + `MAPS_API_KEY` secret (R-31-01) |
-| 어긴 규칙 | R-18-10(theme 공개 API 는 AppTheme 하나) — `TerritoryPalette` 추가, 사유: 유저 데이터 색은 시맨틱 역할로 표현 불가. R-14-03 은 플랜 B(FGS)에서 발생 예정 |
-
-- [ ] **Step 2: 푸시 (사용자 확인 후)**
-
-사용자에게 "플랜 A 커밋 N개 `main` 에 푸시할까?" 확인 후:
-```bash
-git log --oneline origin/main..HEAD 2>/dev/null || git log --oneline
-git push -u origin main
-```
+v1 Task 9 와 동일. 표에서 "테스트" 행의 서버 항목을 `규칙 테스트 8`, "CI" 행에 `KAKAO_NATIVE_APP_KEY` secret 으로 바꾼다.
 
 ---
 
-## Self-Review (작성자 체크)
+## Self-Review (v2)
 
-- **스펙 커버리지**: §2 규칙·격자(Task 2 HexGrid, 캡처 규칙은 플랜 B) · §3 모듈(Task 1·2·5·6·8) · §4 Firestore 컬렉션/규칙(Task 3), `setNickname`(Task 4), `onCaptureCreated`·`decayCells`·`deleteAccount`(플랜 B·C) · §5 Onboarding·Map·시작 분기(Task 6·7·8), Ranking·Settings(플랜 C) · §6 색·팔레트·야간 스타일(Task 8) · §7 applicationId·debug suffix·Maps 키(Task 1·8) · §8 단위·스크린샷·Functions 테스트(Task 4·5·6·7·8) · §9 CI 워크플로(Task 1), Functions CI 잡(플랜 C) · §12 결정 5 App Startup(Task 3)
-- **플레이스홀더**: 없음
-- **타입 일관성**: `HexGrid.regionsAround/boundary/cellOf/regionOf` (Task 2 ↔ 8), `PlayerRepository.currentPlayer/ensureSignedIn/setNickname` (5 ↔ 6·7), `TerritoryRepository.observeCells(Set<CellId>)` (7 ↔ 8), `mapEntry()` 무인자 (8 이 7의 호출부를 고침), `CellPolygon.colorIndex: Int?` (8 ViewModel ↔ Overlay)
-- **Review Focus**: 1→Task 4 중복 테스트, 2→Task 5 `ensureSignedIn` 실패 + Task 6 Retry 테스트, 3→Task 6 권한 거부 테스트, 4→Task 8 줌 임계 테스트, 5→Task 7 `CellDtoTest`
+- **스펙 커버리지**: §4 규칙·트랜잭션(Task 4·5), §7 카카오 키 주입(Task 8 Step 2), §12 결정 5 Initializer 2개(Task 3·8), 나머지 v1 과 동일
+- **타입 일관성**: `NicknameDataSource.setNickname(uid, nickname, colorIfNew)` (5 ↔ FakeNicknameDataSource), `DataSourceException.Kind` 4종 (network ↔ data ↔ fakes), `KakaoMapView(cells: List<DrawableCell>, initialCenter, initialZoom, onCameraIdle)` (Route ↔ View), `mapEntry()` 무인자 (7 ↔ 8)
+- **Review Focus**: 1 → Task 4 `nicknames` 유일성 규칙 테스트 + Task 5 PERMISSION_DENIED→NicknameTaken 매핑, 2 → Task 5 Offline→Network + Task 6 Retry, 3 → Task 6, 4 → Task 8, 5 → Task 7 `CellDtoTest`
