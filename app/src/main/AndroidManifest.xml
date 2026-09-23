@@ -5,7 +5,8 @@
   android:configChanges 는 적지 않는다 — 재생성을 전제로 만들고 상태로 복원한다 (R-18-14).
   package 속성은 쓰지 않는다. namespace 는 빌드 파일이 정한다 (R-19-03).
 -->
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
 
     <application
         android:name=".EatTheLandApplication"
@@ -23,5 +24,21 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!-- Firebase 자동 초기화 프로바이더를 끄고 App Startup 으로 합친다 (R-18-02) -->
+        <provider
+            android:name="com.google.firebase.provider.FirebaseInitProvider"
+            android:authorities="${applicationId}.firebaseinitprovider"
+            tools:node="remove" />
+
+        <provider
+            android:name="androidx.startup.InitializationProvider"
+            android:authorities="${applicationId}.androidx-startup"
+            android:exported="false"
+            tools:node="merge">
+            <meta-data
+                android:name="com.jaychoi.eattheland.startup.FirebaseInitializer"
+                android:value="androidx.startup" />
+        </provider>
     </application>
 </manifest>

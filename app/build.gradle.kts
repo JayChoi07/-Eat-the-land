@@ -9,6 +9,7 @@ plugins {
     alias(libs.plugins.convention.android.application)
     alias(libs.plugins.convention.android.application.compose)
     alias(libs.plugins.convention.android.hilt)
+    alias(libs.plugins.google.services)
 }
 
 android {
@@ -65,6 +66,11 @@ dependencies {
     implementation(libs.androidx.navigation3.ui)
     // rememberViewModelStoreNavEntryDecorator (R-13-05)
     implementation(libs.androidx.lifecycle.viewmodel.navigation3)
+
+    // Firebase 초기화만 :app 이 한다(App Startup Initializer). Auth·Firestore 사용은 :core:network 에.
+    implementation(platform(libs.firebase.bom))
+    implementation(libs.firebase.common)
+    implementation(libs.androidx.startup.runtime)
 
     // Konsist 아키텍처 테스트는 :app 의 test 소스셋에 둔다(enforcement/README.md 설치 6단계).
     testImplementation(libs.junit4)
