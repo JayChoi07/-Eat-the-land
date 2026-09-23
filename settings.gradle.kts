@@ -26,6 +26,7 @@ rootProject.name = "eattheland"
 // :core:model · :core:data · :core:network · :core:database · :core:datastore · :core:domain 은
 // 두 번째 사용처가 생기는 시점에 추가한다 (R-10-01 이 정한 이름 목록 안에서만).
 include(":app")
+include(":core:model")
 include(":core:common")
 include(":core:designsystem")
 include(":core:testing")

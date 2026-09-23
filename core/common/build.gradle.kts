@@ -14,4 +14,8 @@ android {
 dependencies {
     // Dispatchers.kt — CoroutineDispatcher·Dispatchers. hilt 컨벤션이 hilt-android 를 붙인다.
     implementation(libs.kotlinx.coroutines.android)
+    implementation(projects.core.model)
+    implementation(libs.h3.android)
+    testImplementation(projects.core.testing)
+    testImplementation(libs.junit4)
 }

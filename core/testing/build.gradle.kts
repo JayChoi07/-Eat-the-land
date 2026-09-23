@@ -13,4 +13,6 @@ android {
 dependencies {
     implementation(libs.junit4)
     implementation(libs.kotlinx.coroutines.test)
+    implementation(projects.core.model)
+    implementation(projects.core.common)
 }
