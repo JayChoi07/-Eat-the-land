@@ -36,6 +36,7 @@ googleServices = "4.5.0"
 coroutinesPlayServices = "1.11.0"
 startup = "1.2.0"
 javaxInject = "1"
+kakaoMaps = "2.15.2"           # https://apis.map.kakao.com/android_v2/releasenotes/
 
 [libraries]
 # --- build-logic 이 compileOnly 로 참조하는 플러그인 아티팩트 ---
@@ -113,6 +114,7 @@ firebase-firestore = { group = "com.google.firebase", name = "firebase-firestore
 firebase-functions = { group = "com.google.firebase", name = "firebase-functions" }
 firebase-common = { group = "com.google.firebase", name = "firebase-common" }
 kotlinx-coroutines-play-services = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-play-services", version.ref = "coroutinesPlayServices" }
+kakao-maps = { group = "com.kakao.maps.open", name = "android", version.ref = "kakaoMaps" }
 javax-inject = { group = "javax.inject", name = "javax.inject", version.ref = "javaxInject" }
 androidx-startup-runtime = { group = "androidx.startup", name = "startup-runtime", version.ref = "startup" }
 

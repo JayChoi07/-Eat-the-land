@@ -1,56 +1,83 @@
 package com.jaychoi.eattheland.feature.map
 
+import app.cash.turbine.ReceiveTurbine
 import app.cash.turbine.test
+import com.jaychoi.eattheland.core.model.Cell
+import com.jaychoi.eattheland.core.model.LatLngPoint
+import com.jaychoi.eattheland.core.model.Player
+import com.jaychoi.eattheland.core.testing.FakeHexGrid
+import com.jaychoi.eattheland.core.testing.FakePlayerRepository
+import com.jaychoi.eattheland.core.testing.FakeTerritoryRepository
 import com.jaychoi.eattheland.core.testing.MainDispatcherRule
-import com.jaychoi.eattheland.feature.map.domain.GetMapUseCase
-import com.jaychoi.eattheland.feature.map.model.Map
-import com.jaychoi.eattheland.feature.map.model.MapError
-import com.jaychoi.eattheland.feature.map.model.MapResult
 import com.jaychoi.eattheland.feature.map.ui.MapEvent
 import com.jaychoi.eattheland.feature.map.ui.MapViewModel
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 
-/** 로드는 `init`이 아니라 `initialize()`가 시작하므로 (R-12-07) 테스트가 직접 부른다. */
 class MapViewModelTest {
     @get:Rule val mainDispatcherRule = MainDispatcherRule()
 
-    private val repository = FakeMapRepository()
+    private val territory = FakeTerritoryRepository()
+    private val players = FakePlayerRepository()
+    private val grid = FakeHexGrid()
+    private val seoul = LatLngPoint(37.5661, 126.9780)
 
-    private fun viewModel() = MapViewModel(GetMapUseCase(repository))
+    private fun viewModel() = MapViewModel(territory, players, grid)
 
     @Test
-    fun `성공 시 data가 채워지고 로딩이 끝난다`() = runTest {
-        val viewModel = viewModel()
-        viewModel.initialize()
-        viewModel.uiState.test {
-            val state = awaitItem()
-            assertEquals(Map(id = "1", name = "fake"), state.data)
-            assertEquals(false, state.isLoading)
-            assertNull(state.error)
+    fun `카메라가 멈추면 그 region 의 셀을 구독하고 폴리곤으로 바꾼다`() = runTest {
+        val me = Player("me", "나", 0, 3)
+        players.playerFlow.value = me
+        val mine = grid.cellOf(seoul)
+        val other = grid.cellOf(LatLngPoint(37.5679, 126.9780))
+        territory.cells.value = listOf(
+            Cell(mine, "me", 0, 0, grid.regionOf(mine)),
+            Cell(other, "u2", 4, 0, grid.regionOf(other)),
+        )
+        val vm = viewModel()
+        vm.uiState.test {
+            vm.initialize()
+            vm.onEvent(MapEvent.CameraIdle(seoul, zoom = 16f))
+            val state = awaitItemUntil { it.cells.size == 2 }
+            assertEquals(setOf(grid.regionOf(mine)), territory.requestedRegions.last())
+            assertNull(state.cells.first { it.id == mine }.colorIndex)
+            assertEquals(4, state.cells.first { it.id == other }.colorIndex)
+            assertEquals(me, state.player)
+            cancelAndIgnoreRemainingEvents()
         }
     }
 
     @Test
-    fun `실패 시 error가 채워진다`() = runTest {
-        repository.result = MapResult.Failure(MapError.NotFound)
-        val viewModel = viewModel()
-        viewModel.initialize()
-        viewModel.uiState.test {
-            val state = awaitItem()
-            assertEquals(MapError.NotFound, state.error)
-            assertNull(state.data)
-        }
+    fun `줌 14 미만이면 구독하지 않고 isZoomedOut`() = runTest {
+        val vm = viewModel()
+        vm.initialize()
+        vm.onEvent(MapEvent.CameraIdle(seoul, zoom = 13.9f))
+        assertTrue(vm.uiState.value.isZoomedOut)
+        assertTrue(vm.uiState.value.cells.isEmpty())
+        assertTrue(territory.requestedRegions.isEmpty())
     }
 
     @Test
-    fun `Retry 이벤트는 다시 로드한다`() = runTest {
-        val viewModel = viewModel()
-        viewModel.initialize()
-        viewModel.onEvent(MapEvent.Retry)
-        assertEquals(2, repository.callCount)
+    fun `같은 region 안에서 카메라가 움직이면 재구독하지 않는다`() = runTest {
+        val vm = viewModel()
+        vm.uiState.test {
+            vm.initialize()
+            vm.onEvent(MapEvent.CameraIdle(seoul, zoom = 16f))
+            vm.onEvent(MapEvent.CameraIdle(LatLngPoint(37.5662, 126.9781), zoom = 17f))
+            cancelAndIgnoreRemainingEvents()
+        }
+        assertEquals(1, territory.requestedRegions.size)
+    }
+}
+
+/** turbine 보조: 조건을 만족하는 첫 아이템까지 소비한다. */
+private suspend fun <T> ReceiveTurbine<T>.awaitItemUntil(predicate: (T) -> Boolean): T {
+    while (true) {
+        val item = awaitItem()
+        if (predicate(item)) return item
     }
 }

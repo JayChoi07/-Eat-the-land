@@ -5,6 +5,16 @@
 // 아래 의존은 전부 gradle/libs.versions.toml 의 별칭으로만 참조한다 (R-10-12).
 // 앱 셸 3개(activity-compose · core-splashscreen · material3 adaptive)는
 // enforcement/build-logic/libs.versions.toml.snippet 의 "앱 셸" 그룹에 있다 — 설치 3단계에서 함께 병합된다.
+import java.util.Properties
+
+/** local.properties 또는 환경변수(CI). 커밋하지 않는 값의 유일한 입구 (R-19-14, R-31-08). */
+fun Project.localProperty(name: String): String {
+    val props = Properties().apply {
+        rootProject.file("local.properties").takeIf { it.exists() }?.inputStream()?.use { load(it) }
+    }
+    return (props[name] as String?) ?: System.getenv(name) ?: ""
+}
+
 plugins {
     alias(libs.plugins.convention.android.application)
     alias(libs.plugins.convention.android.application.compose)
@@ -25,26 +35,35 @@ android {
         versionName = "1.0.0"
     }
 
+    // 카카오맵 네이티브 앱 키. 새 카카오 콘솔은 키당 패키지 1개라 debug/release 키가 다르다 (스펙 §7).
+    // local.properties → BuildConfig, CI 는 같은 이름의 환경변수 (R-19-13, R-19-14, R-31-08).
+    buildFeatures { buildConfig = true }
+
     // buildType 은 debug·release 둘뿐이다 (R-19-04).
     buildTypes {
         debug {
             // 릴리스 빌드와 한 기기에 함께 깔리게 한다 (R-19-05). isDebuggable·서명은 도구 기본값이라 적지 않는다.
             applicationIdSuffix = ".debug"
             versionNameSuffix = "-debug"
+            buildConfigField(
+                "String",
+                "KAKAO_NATIVE_APP_KEY",
+                "\"${localProperty("KAKAO_NATIVE_APP_KEY_DEBUG")}\"",
+            )
         }
         release {
             // AGP 9.3+ 의 optimization DSL 한 줄 (R-19-04).
             // isMinifyEnabled·isShrinkResources·proguardFiles 를 따로 적지 않는다.
             optimization { enable = true }
+            buildConfigField(
+                "String",
+                "KAKAO_NATIVE_APP_KEY",
+                "\"${localProperty("KAKAO_NATIVE_APP_KEY")}\"",
+            )
         }
     }
 
     // productFlavors 블록은 두지 않는다 — 배포 단위가 갈릴 때만 만든다 (R-19-06).
-
-    // BuildConfig 는 실제로 필드를 둘 때만 켠다 (R-19-13). 켜면 그 값은 :app 만 소유하고
-    // :core:* · :feature:* 에는 Hilt 로 넘긴다 (R-19-14).
-    // buildFeatures { buildConfig = true }
-    // defaultConfig { buildConfigField("String", "BASE_URL", "\"https://api.example.com\"") }
 }
 
 // 서명 자료는 루트 keystore.properties 에서 읽고 커밋하지 않는다 (R-19-12). :app 만 쓰는 설정이라
@@ -77,6 +96,7 @@ dependencies {
     implementation(platform(libs.firebase.bom))
     implementation(libs.firebase.common)
     implementation(libs.androidx.startup.runtime)
+    implementation(libs.kakao.maps) // KakaoMapInitializer
 
     // Konsist 아키텍처 테스트는 :app 의 test 소스셋에 둔다(enforcement/README.md 설치 6단계).
     testImplementation(libs.junit4)

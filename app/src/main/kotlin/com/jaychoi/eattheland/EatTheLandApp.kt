@@ -57,7 +57,7 @@ fun EatTheLandApp(
             // when 분기가 아니라 entryProvider DSL 로 키→콘텐츠를 잇는다 (R-13-04).
             entryProvider = entryProvider {
                 onboardingEntry(onCompleted = { navigator.replaceAll(MapKey) })
-                mapEntry(onBack = { navigator.goBack() })
+                mapEntry()
             },
         )
     }

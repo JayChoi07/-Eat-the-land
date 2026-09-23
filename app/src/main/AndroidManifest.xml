@@ -45,6 +45,9 @@
             <meta-data
                 android:name="com.jaychoi.eattheland.startup.FirebaseInitializer"
                 android:value="androidx.startup" />
+            <meta-data
+                android:name="com.jaychoi.eattheland.startup.KakaoMapInitializer"
+                android:value="androidx.startup" />
         </provider>
     </application>
 </manifest>

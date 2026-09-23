@@ -1,69 +1,65 @@
 package com.jaychoi.eattheland.feature.map.ui
 
-import android.content.res.Configuration
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.material3.Button
-import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.unit.dp
 import com.jaychoi.eattheland.core.designsystem.theme.AppTheme
-import com.jaychoi.eattheland.feature.map.model.MapError
+import com.jaychoi.eattheland.core.model.Player
+import com.jaychoi.eattheland.feature.map.R
 
-/**
- * 순수 UI. 상태와 콜백만 받는다 (R-17-01). Modifier는 첫 선택 파라미터.
- * `onBack`은 뼈대에서 아직 쓰이지 않는다. 실제 화면에서는 TopAppBar의 navigationIcon에 연결한다.
- */
-@Suppress("UnusedParameter")
+/** 지도는 슬롯으로 받아 스크린샷 테스트가 SDK 없이 찍을 수 있게 한다. */
 @Composable
 fun MapScreen(
     uiState: MapUiState,
-    onEvent: (MapEvent) -> Unit,
-    onBack: () -> Unit,
     modifier: Modifier = Modifier,
+    map: @Composable () -> Unit,
 ) {
-    val error = uiState.error
-    Box(modifier = modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        when {
-            uiState.isLoading -> CircularProgressIndicator()
-
-            error != null ->
-                Button(onClick = { onEvent(MapEvent.Retry) }) {
-                    Text(error.toMessage())
-                }
-
-            else -> Text(uiState.data?.name.orEmpty())
+    Box(modifier = modifier.fillMaxSize()) {
+        map()
+        uiState.player?.let { player ->
+            Surface(
+                modifier = Modifier.align(Alignment.TopCenter).padding(16.dp),
+                shape = MaterialTheme.shapes.large,
+                color = MaterialTheme.colorScheme.surfaceContainer,
+                tonalElevation = 2.dp,
+            ) {
+                Text(
+                    text = stringResource(
+                        R.string.map_stat_cells,
+                        player.nickname,
+                        player.cellCount,
+                    ),
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                    style = MaterialTheme.typography.titleMedium,
+                )
+            }
+        }
+        if (uiState.isZoomedOut) {
+            Surface(
+                modifier = Modifier.align(Alignment.BottomCenter).padding(24.dp),
+                shape = MaterialTheme.shapes.large,
+                color = MaterialTheme.colorScheme.surfaceContainer,
+            ) {
+                Text(
+                    text = stringResource(R.string.map_zoomed_out_hint),
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                )
+            }
         }
     }
 }
 
-/**
- * 에러 → 사용자 문구 매핑은 UI 계층 책임이다 (R-23). 도메인·데이터 계층은 문자열을 만들지 않는다.
- * 실제 프로젝트에서는 리터럴 대신 stringResource(R.string.…) 값을 반환하도록 바꾼다.
- */
-private fun MapError.toMessage(): String = when (this) {
-    MapError.Network -> "네트워크 연결을 확인해 주세요"
-    MapError.NotFound -> "요청한 정보를 찾을 수 없습니다"
-    is MapError.Unknown -> "잠시 후 다시 시도해 주세요"
-}
-
-@Preview(name = "Default")
+@Preview
 @Composable
 private fun MapScreenPreview() {
-    AppTheme { MapScreen(uiState = MapUiState(), onEvent = {}, onBack = {}) }
-}
-
-@Preview(name = "Dark", uiMode = Configuration.UI_MODE_NIGHT_YES)
-@Composable
-private fun MapScreenDarkPreview() {
-    AppTheme { MapScreen(uiState = MapUiState(), onEvent = {}, onBack = {}) }
-}
-
-@Preview(name = "LargeFont", fontScale = 1.5f)
-@Composable
-private fun MapScreenLargeFontPreview() {
-    AppTheme { MapScreen(uiState = MapUiState(), onEvent = {}, onBack = {}) }
+    AppTheme { MapScreen(MapUiState(player = Player("u", "땅주인", 0, 42), isZoomedOut = true)) { } }
 }

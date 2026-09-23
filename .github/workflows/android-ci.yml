@@ -42,6 +42,8 @@ jobs:
       # 게이트 4: 조립
       - name: assemble
         run: ./gradlew assembleDebug --no-daemon
+        env:
+          KAKAO_NATIVE_APP_KEY_DEBUG: ${{ secrets.KAKAO_NATIVE_APP_KEY_DEBUG }}
 
       # R-31-06: 스크린샷 diff 는 성공한 실행에서도 봐야 하므로 always()
       - uses: actions/upload-artifact@v7

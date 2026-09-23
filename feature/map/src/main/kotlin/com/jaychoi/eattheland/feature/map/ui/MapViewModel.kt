@@ -2,54 +2,73 @@ package com.jaychoi.eattheland.feature.map.ui
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.jaychoi.eattheland.feature.map.domain.GetMapUseCase
-import com.jaychoi.eattheland.feature.map.model.MapResult
+import com.jaychoi.eattheland.core.common.grid.HexGrid
+import com.jaychoi.eattheland.core.data.PlayerRepository
+import com.jaychoi.eattheland.core.data.TerritoryRepository
+import com.jaychoi.eattheland.core.model.Cell
+import com.jaychoi.eattheland.core.model.CellId
+import com.jaychoi.eattheland.core.model.Player
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.launchIn
+import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.update
-import kotlinx.coroutines.launch
 
 /**
- * 기본 골격은 MVVM-UDF다. MVI가 필요하면 ui/mvi 변형으로 교체한다 (R-12-02 판단 매트릭스).
- * 최초 로드는 `init`이 아니라 UI가 부르는 멱등 `initialize()`가 시작한다 (R-12-07).
- * MapRoute의 `LaunchedEffect(viewModel) { viewModel.initialize() }`가 호출한다.
+ * R-12-02: 플랜 B 에서 추적 중/아님 상태가 생기면 "상태별 허용 이벤트 다름" 1개 해당 → 여전히 MVVM-UDF.
+ * 뷰포트 → region 집합은 값이 바뀔 때만 재구독한다(flatMapLatest + StateFlow 중복 제거).
  */
 @HiltViewModel
 class MapViewModel @Inject constructor(
-    private val getMap: GetMapUseCase,
+    private val territory: TerritoryRepository,
+    private val players: PlayerRepository,
+    private val grid: HexGrid,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(MapUiState())
     val uiState: StateFlow<MapUiState> = _uiState.asStateFlow()
 
+    private val regions = MutableStateFlow<Set<CellId>>(emptySet())
     private var initialized = false
 
-    /** 여러 번 불려도 최초 1회만 로드한다 (R-12-07). */
+    @OptIn(ExperimentalCoroutinesApi::class)
     fun initialize() {
         if (initialized) return
         initialized = true
-        load()
+        val cells = regions.flatMapLatest {
+            if (it.isEmpty()) flowOf(emptyList()) else territory.observeCells(it)
+        }
+        combine(cells, players.currentPlayer) { list, player -> list to player }
+            .onEach { (list, player) ->
+                _uiState.update {
+                    it.copy(player = player, cells = list.map { c -> c.toPolygon(player) })
+                }
+            }
+            .launchIn(viewModelScope)
     }
 
     fun onEvent(event: MapEvent) {
         when (event) {
-            MapEvent.Retry -> load()
+            is MapEvent.CameraIdle -> onCameraIdle(event)
         }
     }
 
-    private fun load() {
-        viewModelScope.launch {
-            _uiState.update { it.copy(isLoading = true, error = null) }
-            when (val result = getMap()) {
-                is MapResult.Success ->
-                    _uiState.update { it.copy(isLoading = false, data = result.data) }
-
-                is MapResult.Failure ->
-                    _uiState.update { it.copy(isLoading = false, error = result.error) }
-            }
-        }
+    private fun onCameraIdle(event: MapEvent.CameraIdle) {
+        val zoomedOut = event.zoom < MIN_OVERLAY_ZOOM
+        _uiState.update { it.copy(isZoomedOut = zoomedOut) }
+        regions.value = if (zoomedOut) emptySet() else grid.regionsAround(event.center)
     }
+
+    private fun Cell.toPolygon(me: Player?) = CellPolygon(
+        id = id,
+        points = grid.boundary(id),
+        colorIndex = if (me != null && ownerUid == me.uid) null else ownerColor,
+    )
 }

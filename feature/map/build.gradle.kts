@@ -9,6 +9,9 @@ android {
 
 dependencies {
     implementation(projects.core.common)
+    implementation(projects.core.model)
+    implementation(projects.core.data)
     implementation(projects.core.designsystem)
+    implementation(libs.kakao.maps)
     testImplementation(projects.core.testing)
 }
