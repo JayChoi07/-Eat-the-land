@@ -15,4 +15,7 @@ dependencies {
     implementation(libs.kotlinx.coroutines.test)
     implementation(projects.core.model)
     implementation(projects.core.common)
+    implementation(projects.core.network)
+    implementation(projects.core.data)
+    implementation(libs.kotlinx.coroutines.android)
 }
