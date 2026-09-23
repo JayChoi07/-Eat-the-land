@@ -22,4 +22,10 @@ class Navigator(private val backStack: NavBackStack<NavKey>) {
             backStack.removeLastOrNull()
         }
     }
+
+    /** 온보딩 완료처럼 되돌아갈 곳이 없어지는 전환. 백스택을 이 키 하나로 바꾼다. */
+    fun replaceAll(key: NavKey) {
+        backStack.clear()
+        backStack.add(key)
+    }
 }

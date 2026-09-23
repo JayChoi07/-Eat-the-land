@@ -14,7 +14,7 @@ class FirestoreUserDataSource @Inject constructor() : UserDataSource {
                 error,
             ->
             if (error != null) {
-                close(error)
+                close(error.toDataSourceException())
                 return@addSnapshotListener
             }
             trySend(if (snap != null && snap.exists()) snap.toObject(UserDto::class.java) else null)

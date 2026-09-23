@@ -53,7 +53,13 @@ android {
 dependencies {
     // :app 만 feature 를 안다. feature 끼리는 서로 의존하지 않는다 (R-10-02, R-10-08).
     implementation(projects.core.designsystem)
+    implementation(projects.core.model)
+    implementation(projects.core.data)
+    implementation(projects.feature.onboarding)
     implementation(projects.feature.map)
+    implementation(libs.androidx.lifecycle.runtime.compose)
+    implementation(libs.androidx.lifecycle.viewmodel.compose)
+    implementation(libs.androidx.hilt.lifecycle.viewmodel.compose)
 
     // 앱 셸이 직접 부르는 API. material3·tooling·BOM 은 convention.android.application.compose 가 붙인다.
     // ComponentActivity·setContent·enableEdgeToEdge (R-18-06, R-18-07)
@@ -75,4 +81,7 @@ dependencies {
     // Konsist 아키텍처 테스트는 :app 의 test 소스셋에 둔다(enforcement/README.md 설치 6단계).
     testImplementation(libs.junit4)
     testImplementation(libs.konsist)
+    testImplementation(projects.core.testing)
+    testImplementation(libs.kotlinx.coroutines.test)
+    testImplementation(libs.turbine)
 }

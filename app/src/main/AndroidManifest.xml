@@ -8,6 +8,12 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
+    <!-- 온보딩에서 요청하는 런타임 권한 (스펙 §3). FGS 권한은 위치 추적을 붙이는 플랜 B 에서 추가한다.
+         ACCESS_BACKGROUND_LOCATION 은 선언하지 않는다. -->
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
     <application
         android:name=".EatTheLandApplication"
         android:label="@string/app_name"

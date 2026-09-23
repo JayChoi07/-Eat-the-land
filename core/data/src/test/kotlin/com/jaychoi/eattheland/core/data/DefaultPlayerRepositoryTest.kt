@@ -85,4 +85,15 @@ class DefaultPlayerRepositoryTest {
         nicknames.error = DataSourceException(DataSourceException.Kind.Unknown)
         assertTrue(repo.setNickname("x1") is PlayerError.Unknown)
     }
+
+    @Test
+    fun `users 스트림 오류는 예외 대신 null(프로필 없음)로 흘린다`() = runTest {
+        users.observeError = DataSourceException(DataSourceException.Kind.PermissionDenied)
+        val repo = repo(StandardTestDispatcher(testScheduler))
+        repo.currentPlayer.test {
+            assertNull(awaitItem())
+            expectNoEvents() // auth.uid 는 StateFlow 라 완료되지 않는다 — 예외가 안 오는 것만 본다
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
 }

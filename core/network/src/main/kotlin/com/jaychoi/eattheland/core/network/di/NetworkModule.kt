@@ -1,7 +1,9 @@
 package com.jaychoi.eattheland.core.network.di
 
 import com.jaychoi.eattheland.core.network.AuthDataSource
+import com.jaychoi.eattheland.core.network.CellDataSource
 import com.jaychoi.eattheland.core.network.FirebaseAuthDataSource
+import com.jaychoi.eattheland.core.network.FirestoreCellDataSource
 import com.jaychoi.eattheland.core.network.FirestoreNicknameDataSource
 import com.jaychoi.eattheland.core.network.FirestoreUserDataSource
 import com.jaychoi.eattheland.core.network.NicknameDataSource
@@ -19,4 +21,6 @@ interface NetworkModule {
     @Binds fun bindUser(impl: FirestoreUserDataSource): UserDataSource
 
     @Binds fun bindNickname(impl: FirestoreNicknameDataSource): NicknameDataSource
+
+    @Binds fun bindCell(impl: FirestoreCellDataSource): CellDataSource
 }
