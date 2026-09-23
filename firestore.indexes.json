@@ -1,0 +1,9 @@
+{
+  "indexes": [
+    { "collectionGroup": "captures", "queryScope": "COLLECTION",
+      "fields": [ { "fieldPath": "uid", "order": "ASCENDING" }, { "fieldPath": "status", "order": "ASCENDING" }, { "fieldPath": "createdAt", "order": "DESCENDING" } ] },
+    { "collectionGroup": "cells", "queryScope": "COLLECTION",
+      "fields": [ { "fieldPath": "region", "order": "ASCENDING" }, { "fieldPath": "capturedAt", "order": "DESCENDING" } ] }
+  ],
+  "fieldOverrides": []
+}
