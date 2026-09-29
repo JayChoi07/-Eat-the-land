@@ -4,8 +4,12 @@ import com.jaychoi.eattheland.core.data.DefaultPlayerRepository
 import com.jaychoi.eattheland.core.data.DefaultTerritoryRepository
 import com.jaychoi.eattheland.core.data.PlayerRepository
 import com.jaychoi.eattheland.core.data.TerritoryRepository
+import com.jaychoi.eattheland.core.data.location.DefaultLocationRepository
+import com.jaychoi.eattheland.core.data.location.LocationRepository
 import com.jaychoi.eattheland.core.data.sync.PendingCaptureScheduler
 import com.jaychoi.eattheland.core.data.sync.WorkManagerPendingCaptureScheduler
+import com.jaychoi.eattheland.core.data.tracking.DefaultTrackingRepository
+import com.jaychoi.eattheland.core.data.tracking.TrackingRepository
 import dagger.Binds
 import dagger.Module
 import dagger.hilt.InstallIn
@@ -21,4 +25,8 @@ interface DataModule {
     @Binds fun bindPendingCaptureScheduler(
         impl: WorkManagerPendingCaptureScheduler,
     ): PendingCaptureScheduler
+
+    @Binds fun bindLocationRepository(impl: DefaultLocationRepository): LocationRepository
+
+    @Binds fun bindTrackingRepository(impl: DefaultTrackingRepository): TrackingRepository
 }

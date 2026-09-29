@@ -14,9 +14,12 @@ dependencies {
     implementation(projects.core.network)
     implementation(projects.core.datastore)
     implementation(libs.androidx.work.runtime)
+    implementation(libs.play.services.location)
+    implementation(libs.kotlinx.coroutines.play.services)
     implementation(libs.kotlinx.coroutines.android)
     testImplementation(projects.core.testing)
     testImplementation(libs.junit4)
     testImplementation(libs.kotlinx.coroutines.test)
     testImplementation(libs.turbine)
+    testImplementation(libs.robolectric)
 }
