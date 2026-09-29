@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="ranking_title">랭킹</string>
+    <string name="ranking_back">뒤로</string>
+    <string name="ranking_my_rank">%1$d위</string>
+    <string name="ranking_no_rank">아직 순위가 없어요</string>
+    <string name="ranking_cells">%1$d칸</string>
+    <string name="ranking_empty">아직 아무도 땅을 밟지 않았어요</string>
+    <string name="ranking_error_offline">네트워크 연결을 확인해 주세요</string>
+    <string name="ranking_error_unknown">새로고침에 실패했어요</string>
+    <string name="ranking_retry">다시 시도</string>
+</resources>
