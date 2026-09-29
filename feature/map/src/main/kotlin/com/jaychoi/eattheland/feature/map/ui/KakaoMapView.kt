@@ -2,7 +2,9 @@ package com.jaychoi.eattheland.feature.map.ui
 
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.Lifecycle
@@ -34,6 +36,8 @@ fun KakaoMapView(
 ) {
     val lifecycleOwner = LocalLifecycleOwner.current
     val holder = remember { MapHolder() }
+    // factory 는 한 번만 실행된다. 그 안의 콜백이 첫 컴포지션 값을 붙잡지 않도록 최신 값을 따로 든다.
+    val currentOnCameraIdle by rememberUpdatedState(onCameraIdle)
 
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
@@ -65,7 +69,7 @@ fun KakaoMapView(
                         override fun onMapReady(map: KakaoMap) {
                             holder.map = map
                             map.setOnCameraMoveEndListener { _, position, _ ->
-                                onCameraIdle(
+                                currentOnCameraIdle(
                                     LatLngPoint(
                                         position.position.latitude,
                                         position.position.longitude,
@@ -73,7 +77,7 @@ fun KakaoMapView(
                                     position.zoomLevel.toFloat(),
                                 )
                             }
-                            holder.draw(cells)
+                            holder.drawLatest()
                         }
 
                         override fun getPosition(): LatLng = LatLng.from(
@@ -90,13 +94,23 @@ fun KakaoMapView(
     )
 }
 
-/** MapView·KakaoMap 참조와 마지막으로 그린 셀 목록을 들고, 바뀌었을 때만 전부 다시 그린다. */
+/**
+ * MapView·KakaoMap 참조와 셀 목록을 들고, 바뀌었을 때만 전부 다시 그린다.
+ * 지도가 준비되기 전에 받은 목록은 [latest] 에 두었다가 준비되면 그린다.
+ */
 private class MapHolder {
     var mapView: MapView? = null
     var map: KakaoMap? = null
+    private var latest: List<DrawableCell> = emptyList()
     private var drawn: List<DrawableCell> = emptyList()
 
     fun draw(cells: List<DrawableCell>) {
+        latest = cells
+        drawLatest()
+    }
+
+    fun drawLatest() {
+        val cells = latest
         val map = map ?: return
         if (cells == drawn) return
         val layer = map.shapeManager?.layer ?: return

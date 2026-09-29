@@ -14,6 +14,9 @@ interface HexGrid {
 
     fun boundary(cell: CellId): List<LatLngPoint>
 
+    /** 서버에서 온 문서 ID 가 실제 셀([CELL_RES])인가. 아니면 [regionOf]·[boundary] 에 넘기면 안 된다. */
+    fun isValidCell(cell: CellId): Boolean
+
     /** 중심점이 속한 region 과 그 이웃 6개. 뷰포트 리스너 키로 쓴다(Firestore `in` 한도 30 미만). */
     fun regionsAround(center: LatLngPoint): Set<CellId>
 

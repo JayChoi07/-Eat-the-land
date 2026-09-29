@@ -25,6 +25,11 @@ class H3HexGrid @Inject constructor() : HexGrid {
     override fun boundary(cell: CellId): List<LatLngPoint> =
         h3.cellToBoundary(cell.value).map { LatLngPoint(it.lat, it.lng) }
 
+    // H3 는 16진수가 아닌 문자열에 NumberFormatException 을 던진다 — 조작된 문서 ID 는 "유효하지 않음"이다.
+    override fun isValidCell(cell: CellId): Boolean = runCatching {
+        h3.isValidCell(cell.value) && h3.getResolution(cell.value) == HexGrid.CELL_RES
+    }.getOrDefault(false)
+
     override fun regionsAround(center: LatLngPoint): Set<CellId> {
         val region = h3.latLngToCellAddress(center.lat, center.lng, HexGrid.REGION_RES)
         return h3.gridDisk(region, 1).map(::CellId).toSet()

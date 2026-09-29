@@ -31,7 +31,8 @@ class FirestoreNicknameDataSource @Inject constructor() : NicknameDataSource {
         val nickRef = document("nicknames/$lower")
         val userRef = document("users/$uid")
         val nickSnap = tx.get(nickRef)
-        if (nickSnap.exists() && nickSnap.getString("uid") != uid) throw NicknameTakenSignal()
+        val alreadyMine = nickSnap.exists() && nickSnap.getString("uid") == uid
+        if (nickSnap.exists() && !alreadyMine) throw NicknameTakenSignal()
         val userSnap = tx.get(userRef)
         if (userSnap.exists()) {
             val oldLower = userSnap.getString("nicknameLower")
@@ -49,7 +50,8 @@ class FirestoreNicknameDataSource @Inject constructor() : NicknameDataSource {
                 ),
             )
         }
-        tx.set(nickRef, mapOf("uid" to uid))
+        // 이미 내 예약이면 다시 쓰지 않는다 — 규칙상 update 는 금지라 같은 닉네임 재제출이 거부된다.
+        if (!alreadyMine) tx.set(nickRef, mapOf("uid" to uid))
     }
 
     private fun Throwable.toKind(): DataSourceException.Kind = when (this) {

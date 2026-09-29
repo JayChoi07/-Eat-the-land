@@ -1,6 +1,6 @@
 # 플랜 A 표준 준수 보고 (android-standards)
 
-작성일: 2026-09-29 · 대상: 플랜 A(스캐폴딩 → Firebase 연결 → 보안 규칙 → 온보딩 → 카카오맵 영토 보기) · 최종 커밋 `88b54d1`
+작성일: 2026-09-29 · 대상: 플랜 A(스캐폴딩 → Firebase 연결 → 보안 규칙 → 온보딩 → 카카오맵 영토 보기) · 구현 최종 커밋 `88b54d1` + 최종 리뷰 반영 커밋(아래 "최종 리뷰")
 
 유형: new-app
 
@@ -50,23 +50,26 @@
 | `testDebugUnitTest` + `:core:domain:test` | 통과 (아래 표) |
 | `verifyRoborazziDebug` | 통과 (골든 5장, 브랜드 색 교체 후 1회 재기록 — 의도된 변경) |
 | `assembleDebug` | 통과 |
-| 규칙 테스트 `npm --prefix rules test` | 통과 8/8 (Firestore 에뮬레이터) |
+| 규칙 테스트 `npm --prefix rules test` | 통과 20/20 (Firestore 에뮬레이터) |
 
 | 테스트 | 수 |
 |---|---|
 | ArchitectureTest (Konsist) | 6 |
 | FakeHexGridTest | 2 |
 | ValidateNicknameUseCaseTest | 2 |
-| DefaultPlayerRepositoryTest | 6 |
-| DefaultTerritoryRepositoryTest | 2 |
+| DefaultPlayerRepositoryTest | 8 |
+| DefaultTerritoryRepositoryTest | 5 |
 | CellDtoTest | 3 |
 | OnboardingViewModelTest | 7 |
 | AppRootViewModelTest | 1 |
-| MapViewModelTest | 3 |
+| NavigatorTest | 2 |
+| MapViewModelTest | 6 |
 | 스크린샷 (Onboarding 3, Map 2) | 5 |
 
 실기기(SM-S906N Galaxy S22+, Android 16, arm64): 온보딩 → 닉네임 실서버 저장 → 지도 진입, 카카오 타일 정상, 시드 3셀 육각형, 서버 변경 3초 내 실시간 반영, 회전 후 상태 유지, 크래시 없음.
-**미검증**: 줌 아웃 시 힌트·오버레이 숨김(핀치 자동화 불가 — 수동 확인 필요). `MIN_OVERLAY_ZOOM=14` 와 카카오 줌 스케일의 대응은 단위 테스트로만 검증.
+줌 아웃 시 힌트·오버레이 숨김은 사용자가 실기기에서 확인(2026-09-29) — `MIN_OVERLAY_ZOOM=14` 유지.
+최종 리뷰 반영 뒤 재확인(같은 기기): 조작된 셀 문서(`cells/zz`, res 7 주소를 ID 로 쓴 문서)를 관리자 키로 심은 상태에서 크래시 없이 정상 셀 3개만 표시, 회전 후 재표시, 서버 색 변경 실시간 반영.
+**미검증**: 새 규칙 배포 상태에서의 신규 가입(온보딩 닉네임 저장) 실기기 재실행 — 기기의 기존 익명 계정을 지워야 해서 하지 않음. 같은 쓰기 묶음은 규칙 테스트가 덮는다. release(R8) 빌드 실행도 미검증(플랜 C).
 
 ### review 체크리스트
 
@@ -93,8 +96,8 @@
 | 네비게이션 | 백스택은 `:app` `EatTheLandApp` 의 `rememberNavBackStack` 한 곳, 시작 키는 프로필 유무로 `MapKey`/`OnboardingKey`, 조작은 `Navigator`(`navigate`·`goBack`·`replaceAll`) — R-13-03(백스택은 :app 최상위가 소유하고 래퍼 API 로만 조작). 엔트리는 `onboardingEntry`·`mapEntry` 확장 함수 — R-13-04(entryProvider DSL). 데코레이터 순서 SaveableStateHolder → ViewModelStore — R-13-05 |
 | 상태 아키텍처 | R-12-02(상태 아키텍처는 결정 매트릭스로) 판정 — Onboarding 0/5, AppRoot 0/5, Map 0/5(플랜 B 에서 추적 상태가 생기면 1/5) → 전부 **MVVM-UDF**. 일회성 이벤트는 `OnboardingUiState.completed` + `CompletedConsumed` — R-12-03(ViewModel 에서 UI 로 일회성 이벤트를 push 하지 않는다) |
 | UseCase | `ValidateNicknameUseCase` 1개 — 규칙 로직이 있고 온보딩·설정 두 화면이 공유 예정: R-16-02(로직이 있을 때만 UseCase), R-16-07(공유·조합 시 승격). AppRoot·Map 은 Repository 직접 호출 |
-| 테스트 | 단위 32 + 스크린샷 5 + 규칙 8, 전부 통과. ViewModel 은 Hilt 없이 생성자에 fake 주입 — R-14-10(테스트는 생성자로 fake). 화면마다 스크린샷 — R-30-03 |
-| CI | `.github/workflows/android-ci.yml` 4게이트 + `KAKAO_NATIVE_APP_KEY_DEBUG` secret — R-31-01(PR 게이트 순서 고정). `google-services.json` 이 커밋 제외라 **CI 에서 `assembleDebug` 는 아직 실패함** — secret 주입 스텝은 플랜 C. 규칙 테스트 잡도 플랜 C |
+| 테스트 | 단위 42 + 스크린샷 5 + 규칙 20, 전부 통과. ViewModel 은 Hilt 없이 생성자에 fake 주입 — R-14-10(테스트는 생성자로 fake). 화면마다 스크린샷 — R-30-03 |
+| CI | `.github/workflows/android-ci.yml` 4게이트 + `KAKAO_NATIVE_APP_KEY_DEBUG` secret — R-31-01(PR 게이트 순서 고정). `google-services.json` 은 커밋 제외라 CI 는 패키지 이름만 맞춘 자리표시 파일(`.github/ci/google-services.json`)을 복사해 쓴다 — 로컬에서 같은 파일로 `processDebugGoogleServices`·`assembleDebug` 통과 확인, **GitHub 에서의 실제 실행은 푸시 전이라 미확인**. 배포용 실제 파일 주입과 규칙 테스트 잡은 플랜 C |
 | 어긴 규칙 | ① R-18-10(테마 진입점은 AppTheme 하나) — `TerritoryPalette` 를 `theme/` 에 추가 공개. 사유: 유저별 영토 색은 시맨틱 역할로 표현할 수 없는 데이터 색. ② R-18-02(시작 초기화는 매트릭스대로) — 카카오맵 SDK 는 매트릭스상 "지연"이 정답인데 시작 시점에 초기화. 사유: `:feature:map` 이 `:app` 의 Initializer 를 부를 경로가 없어 단순화. 콜드 스타트 영향 미측정 — 플랜 B 에서 지연 초기화로 옮길 후보. ③ R-10-10(convention plugin 6종) 범위 밖 — JVM 모듈 `:core:model`·`:core:domain` 에는 컨벤션(ktlint·detekt)이 안 붙음. 사유: 팩에 JVM 컨벤션 플러그인이 없음 → 이 두 모듈은 정적 분석 미적용. ④ 예정: R-14-03(Hilt 진입점은 Application·Activity) — 플랜 B 의 위치 추적 FGS |
 
 ## 스펙과 달라진 점
@@ -105,3 +108,22 @@
 | 카카오 앱 키 | 1개 | debug/release 2개 | 새 카카오 콘솔은 키당 패키지 1개 |
 | 런타임 권한 선언 | 플랜 B | 위치 2·알림 1 은 플랜 A 에서 선언 | 온보딩 권한 요청이 선언 없이는 즉시 거부됨 |
 | `AppRootViewModel` 위치 | `com.jaychoi.eattheland` | `com.jaychoi.eattheland.ui` | Konsist R-12-01 |
+
+## 최종 리뷰 (Codex gpt-6-astra, effort high, 읽기 전용)
+
+판정 DO NOT SHIP → 아래 반영 후 4게이트·규칙 테스트·실기기 재확인 통과.
+
+| # | 등급 | 지적 | 처리 |
+|---|---|---|---|
+| 1 | Critical | 조작된 셀 문서 ID 로 같은 지역을 보는 사용자의 앱이 죽음 | 규칙: 문서 ID 형식·region = res 7 부모·ownerColor 0..6 강제. 클라: `HexGrid.isValidCell` + region 일치 검사로 걸러냄 |
+| 2 | Critical | 프로필을 직접 써서 닉네임 유일성 우회 | 규칙: 프로필 닉네임 ↔ `nicknames` 예약을 `getAfter`/`existsAfter` 로 짝 강제(생성·변경·삭제, 예약 선점 금지) |
+| 3 | Important | 리스너 오류 뒤 복구 안 됨 | `retryOnListenerError` — 5초부터 두 배씩(최대 60초) 재구독, 받은 값은 유지 |
+| 4 | Important | 프로필이 나중에 확인돼도 온보딩에 남음 | `Navigator.replaceAllIfPresent(OnboardingKey → MapKey)` |
+| 5 | Important | 지도 준비 중 받은 셀 변경 유실 | `MapHolder` 가 최신 목록을 들고 준비되면 그림, 콜백은 `rememberUpdatedState` |
+| 6 | Important | 같은 닉네임 재제출이 "이미 사용 중" | 이미 내 예약이면 예약 쓰기 생략 |
+| 7 | Important | 백그라운드에서도 셀 구독 유지(Spark read 소모) | `MapViewModel.uiState` 를 `stateIn(WhileSubscribed(5s))` 로, `initialize()` 제거 |
+| 8 | Important | 깨끗한 CI 에서 `google-services.json` 누락으로 실패 | 자리표시 파일 복사 스텝 |
+| 9 | Important | 지도 시작 실패(`onMapError`)가 빈 화면 | **미처리 — 결정 대기.** 스펙에 지도 오류 화면이 없어 새 UI(문구·재시도 버튼)를 임의로 넣지 않음 |
+| 10 | Minor | 회전 시 카메라 위치 초기화 | 이월(플랜 B 현재 위치 연동과 함께) |
+| 11 | Minor | 규칙 테스트가 읽기·타입 오류 분기를 안 덮음 | 반영(8 → 20건) |
+

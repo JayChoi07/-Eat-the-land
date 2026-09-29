@@ -13,7 +13,6 @@ import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
@@ -29,14 +28,12 @@ class DefaultPlayerRepository @Inject constructor(
     @OptIn(ExperimentalCoroutinesApi::class)
     override val currentPlayer: Flow<Player?> = auth.uid.flatMapLatest(::playerFor)
 
-    // 리스너 오류(권한·오프라인)는 앱 루트를 죽이지 않고 "프로필 없음"으로 흘린다. 재구독은 상위 stateIn 이 한다.
+    // 리스너 오류는 앱 루트를 죽이지 않고 다시 구독한다. 첫 값 전이면 "프로필 없음"으로 시작한다.
     private fun playerFor(uid: String?): Flow<Player?> =
         if (uid == null) {
             flowOf(null)
         } else {
-            users.observe(uid).map {
-                it?.toPlayer(uid)
-            }.catch { if (it is DataSourceException) emit(null) else throw it }
+            users.observe(uid).map { it?.toPlayer(uid) }.retryOnListenerError(fallback = null)
         }
 
     override suspend fun ensureSignedIn(): PlayerError? = withContext(io) {

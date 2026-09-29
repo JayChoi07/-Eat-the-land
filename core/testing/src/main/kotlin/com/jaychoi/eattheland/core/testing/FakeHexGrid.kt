@@ -28,8 +28,14 @@ class FakeHexGrid : HexGrid {
         )
     }
 
+    override fun isValidCell(cell: CellId): Boolean = CELL_PATTERN.matches(cell.value)
+
     override fun regionsAround(center: LatLngPoint): Set<CellId> = setOf(regionOf(cellOf(center)))
 
     private fun key(p: LatLngPoint, digits: Int): String =
         String.format(Locale.US, "%.${digits}f_%.${digits}f", p.lat, p.lng)
+
+    private companion object {
+        val CELL_PATTERN = Regex("""^-?\d+\.\d{3}_-?\d+\.\d{3}$""")
+    }
 }

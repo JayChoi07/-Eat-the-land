@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.adaptive.currentWindowAdaptiveInfoV2
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
@@ -41,6 +42,11 @@ fun EatTheLandApp(
     val startKey: NavKey = if (uiState.hasProfile) MapKey else OnboardingKey
     val backStack = rememberNavBackStack(startKey)
     val navigator = remember(backStack) { Navigator(backStack) }
+    // startKey 는 백스택을 처음 만들 때만 쓰인다. 프로필이 그 뒤에 확인되면(늦은 첫 응답, 복원된 백스택)
+    // 온보딩에 남지 않게 지도로 바꾼다 — 온보딩 완료 조건은 프로필 존재다 (스펙 §5).
+    LaunchedEffect(uiState.hasProfile) {
+        if (uiState.hasProfile) navigator.replaceAllIfPresent(from = OnboardingKey, to = MapKey)
+    }
 
     Scaffold(modifier = modifier) { innerPadding ->
         NavDisplay(

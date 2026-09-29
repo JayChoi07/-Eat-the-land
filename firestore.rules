@@ -10,38 +10,59 @@ service cloud.firestore {
         && d.color is int && d.color >= 0 && d.color < 7
         && d.cellCount is int;
     }
+    function nicknamePath(lower) { return /databases/$(db)/documents/nicknames/$(lower); }
+    function userPath(uid) { return /databases/$(db)/documents/users/$(uid); }
+    // 같은 트랜잭션·배치가 끝난 뒤 그 닉네임 예약의 주인이 uid 인가
+    function reservedBy(lower, uid) {
+      return existsAfter(nicknamePath(lower)) && getAfter(nicknamePath(lower)).data.uid == uid;
+    }
+    // 같은 트랜잭션·배치가 끝난 뒤 uid 의 프로필이 그 닉네임을 쓰는가
+    function usedBy(lower, uid) {
+      return existsAfter(userPath(uid)) && getAfter(userPath(uid)).data.nicknameLower == lower;
+    }
 
     // 프로필. 생성·닉네임 변경·삭제는 본인, cellCount 는 캡처 트랜잭션이 누구나 정확히 ±1 (스펙 §4)
+    // 닉네임은 nicknames 예약과 항상 짝이어야 한다 — 프로필만 직접 써서 유일성을 우회하지 못하게 한다.
     match /users/{uid} {
       allow read: if signedIn();
       allow create: if isOwner(uid) && profileValid(request.resource.data)
-        && request.resource.data.cellCount == 0 && request.resource.data.createdAt == request.time;
+        && request.resource.data.cellCount == 0 && request.resource.data.createdAt == request.time
+        && reservedBy(request.resource.data.nicknameLower, uid);
       allow update: if
         (isOwner(uid) && profileValid(request.resource.data)
-          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['nickname','nicknameLower']))
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['nickname','nicknameLower'])
+          && reservedBy(request.resource.data.nicknameLower, uid))
         || (signedIn()
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['cellCount'])
           && (request.resource.data.cellCount - resource.data.cellCount) in [-1, 1]
           && request.resource.data.cellCount >= 0);
-      allow delete: if isOwner(uid);
+      allow delete: if isOwner(uid) && !existsAfter(nicknamePath(resource.data.nicknameLower));
     }
 
-    // 닉네임 유일성: create 만 허용 → 이미 있으면 update 라서 거부된다
+    // 닉네임 유일성: create 만 허용 → 이미 있으면 update 라서 거부된다.
+    // 예약은 본인 프로필이 그 닉네임을 쓸 때만 만들 수 있고, 쓰는 동안에는 지울 수 없다.
     match /nicknames/{lower} {
       allow read: if signedIn();
-      allow create: if isOwner(request.resource.data.uid) && request.resource.data.keys().hasOnly(['uid']);
+      allow create: if isOwner(request.resource.data.uid) && request.resource.data.keys().hasOnly(['uid'])
+        && usedBy(lower, request.auth.uid);
       allow update: if false;
-      allow delete: if signedIn() && resource.data.uid == request.auth.uid;
+      allow delete: if signedIn() && resource.data.uid == request.auth.uid
+        && !usedBy(lower, request.auth.uid);
     }
 
-    // 셀. 본인 소유로만 쓰고(뺏기 = update), 시각은 서버 시각만
+    // 셀. 본인 소유로만 쓰고(뺏기 = update), 시각은 서버 시각만.
+    // 문서 ID 는 H3 res 11 주소(15자: '8b' + 10자 + 'fff'), region 은 그 res 7 부모여야 한다.
+    // H3 주소에서 앞 9자 중 2~8번째(기준 셀 + 1~7번 자리)는 부모와 같다.
     match /cells/{cellId} {
       allow read: if signedIn();
       allow create, update: if signedIn()
+        && cellId.matches('^8b[0-9a-f]{10}fff$')
         && request.resource.data.keys().hasOnly(['ownerUid','ownerColor','capturedAt','region'])
         && request.resource.data.ownerUid == request.auth.uid
         && request.resource.data.ownerColor is int
+        && request.resource.data.ownerColor >= 0 && request.resource.data.ownerColor < 7
         && request.resource.data.region is string
+        && request.resource.data.region == '87' + cellId[2:9] + 'ffffff'
         && request.resource.data.capturedAt == request.time;
       allow delete: if false;
     }

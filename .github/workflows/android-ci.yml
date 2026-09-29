@@ -26,6 +26,11 @@ jobs:
           validate-wrappers: true
           cache-read-only: ${{ github.ref != 'refs/heads/main' }}
 
+      # app/google-services.json 은 커밋하지 않는다. 네 게이트는 실제 Firebase 값 없이 돌므로
+      # 패키지 이름만 맞춘 자리표시 파일을 둔다. 배포용 빌드는 실제 파일을 secret 으로 넣는다(플랜 C).
+      - name: google-services.json (placeholder)
+        run: cp .github/ci/google-services.json app/google-services.json
+
       # 게이트 1: 포맷 (FORMATTER = ktlint-gradle)
       - name: ktlint
         run: ./gradlew ktlintCheck --no-daemon

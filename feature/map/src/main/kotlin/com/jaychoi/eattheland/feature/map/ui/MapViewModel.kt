@@ -11,48 +11,52 @@ import com.jaychoi.eattheland.core.model.Player
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
-import kotlinx.coroutines.flow.launchIn
-import kotlinx.coroutines.flow.onEach
-import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
 
 /**
  * R-12-02: 플랜 B 에서 추적 중/아님 상태가 생기면 "상태별 허용 이벤트 다름" 1개 해당 → 여전히 MVVM-UDF.
- * 뷰포트 → region 집합은 값이 바뀔 때만 재구독한다(flatMapLatest + StateFlow 중복 제거).
+ * 뷰포트 → region 집합은 값이 바뀔 때만 재구독한다(flatMapLatest + 중복 제거).
+ * 셀 리스너는 화면이 수집하는 동안만 산다 — 앱이 백그라운드로 가면 5초 뒤 끊겨 Firestore read 를 쓰지 않는다.
  */
 @HiltViewModel
 class MapViewModel @Inject constructor(
     private val territory: TerritoryRepository,
-    private val players: PlayerRepository,
+    players: PlayerRepository,
     private val grid: HexGrid,
 ) : ViewModel() {
 
-    private val _uiState = MutableStateFlow(MapUiState())
-    val uiState: StateFlow<MapUiState> = _uiState.asStateFlow()
+    private data class Viewport(
+        val regions: Set<CellId> = emptySet(),
+        val isZoomedOut: Boolean = false,
+    )
 
-    private val regions = MutableStateFlow<Set<CellId>>(emptySet())
-    private var initialized = false
+    private val viewport = MutableStateFlow(Viewport())
 
     @OptIn(ExperimentalCoroutinesApi::class)
-    fun initialize() {
-        if (initialized) return
-        initialized = true
-        val cells = regions.flatMapLatest {
-            if (it.isEmpty()) flowOf(emptyList()) else territory.observeCells(it)
-        }
-        combine(cells, players.currentPlayer) { list, player -> list to player }
-            .onEach { (list, player) ->
-                _uiState.update {
-                    it.copy(player = player, cells = list.map { c -> c.toPolygon(player) })
-                }
-            }
-            .launchIn(viewModelScope)
-    }
+    private val cells = viewport.map { it.regions }
+        .distinctUntilChanged()
+        .flatMapLatest(::cellsIn)
+
+    val uiState: StateFlow<MapUiState> = combine(
+        cells,
+        players.currentPlayer,
+        viewport.map { it.isZoomedOut }.distinctUntilChanged(),
+    ) { list, player, zoomedOut ->
+        MapUiState(
+            player = player,
+            cells = list.map { it.toPolygon(player) },
+            isZoomedOut = zoomedOut,
+        )
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), MapUiState())
 
     fun onEvent(event: MapEvent) {
         when (event) {
@@ -60,10 +64,15 @@ class MapViewModel @Inject constructor(
         }
     }
 
+    private fun cellsIn(regions: Set<CellId>): Flow<List<Cell>> =
+        if (regions.isEmpty()) flowOf(emptyList()) else territory.observeCells(regions)
+
     private fun onCameraIdle(event: MapEvent.CameraIdle) {
         val zoomedOut = event.zoom < MIN_OVERLAY_ZOOM
-        _uiState.update { it.copy(isZoomedOut = zoomedOut) }
-        regions.value = if (zoomedOut) emptySet() else grid.regionsAround(event.center)
+        viewport.value = Viewport(
+            regions = if (zoomedOut) emptySet() else grid.regionsAround(event.center),
+            isZoomedOut = zoomedOut,
+        )
     }
 
     private fun Cell.toPolygon(me: Player?) = CellPolygon(
@@ -71,4 +80,8 @@ class MapViewModel @Inject constructor(
         points = grid.boundary(id),
         colorIndex = if (me != null && ownerUid == me.uid) null else ownerColor,
     )
+
+    private companion object {
+        const val STOP_TIMEOUT_MS = 5_000L
+    }
 }

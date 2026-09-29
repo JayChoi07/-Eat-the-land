@@ -98,9 +98,9 @@ Cloud Functions 없음. 모든 쓰기는 클라이언트가 하고 **보안 규�
 
 | 컬렉션 | 문서 ID | 필드 | 규칙 요지 |
 |---|---|---|---|
-| `users` | uid | `nickname`(2~12자 규칙 매치), `nicknameLower`(== nickname.lower()), `color`(0..6 int), `cellCount`(int), `createdAt`(request.time) | read 전체. create/update/delete 본인. create 시 `cellCount == 0`. 프로필 update 는 nickname·nicknameLower 만 변경. `cellCount` update 는 누구나 정확히 ±1 만 (캡처 트랜잭션용) |
-| `nicknames` | nicknameLower | `uid` | read 전체. **create 만** 본인 uid 로(이미 있으면 update 라서 거부 → 유일성 보장). delete 본인. update 금지 |
-| `cells` | H3 res11 | `ownerUid`(== auth.uid), `ownerColor`(int), `capturedAt`(== request.time), `region`(string) | read 전체. create/update 본인 소유로만(뺏기 = update). delete 금지 |
+| `users` | uid | `nickname`(2~12자 규칙 매치), `nicknameLower`(== nickname.lower()), `color`(0..6 int), `cellCount`(int), `createdAt`(request.time) | read 전체. create/update/delete 본인. create 시 `cellCount == 0`. 프로필 update 는 nickname·nicknameLower 만 변경. **닉네임은 같은 트랜잭션이 끝난 뒤 `nicknames/{lower}` 예약의 주인이 본인이어야 한다**(프로필만 직접 써서 유일성 우회 금지). delete 는 예약도 함께 지울 때만. `cellCount` update 는 누구나 정확히 ±1 만 (캡처 트랜잭션용) |
+| `nicknames` | nicknameLower | `uid` | read 전체. **create 만** 본인 uid 로(이미 있으면 update 라서 거부 → 유일성 보장), 본인 프로필이 그 닉네임을 쓸 때만(선점 금지). delete 는 본인이 그 닉네임을 더 쓰지 않을 때만. update 금지 |
+| `cells` | H3 res11 | `ownerUid`(== auth.uid), `ownerColor`(0..6 int), `capturedAt`(== request.time), `region`(그 셀의 res 7 부모) | read 전체. create/update 본인 소유로만(뺏기 = update). 문서 ID 는 H3 res 11 형식(`8b` + 10자 + `fff`)만. delete 금지. 클라는 받은 문서도 `HexGrid.isValidCell` 로 다시 거른다 |
 
 색 배정: 클라가 `uid.hashCode() mod 7` (서버 카운터 없음).
 
@@ -118,32 +118,59 @@ service cloud.firestore {
         && d.color is int && d.color >= 0 && d.color < 7
         && d.cellCount is int;
     }
+    function nicknamePath(lower) { return /databases/$(db)/documents/nicknames/$(lower); }
+    function userPath(uid) { return /databases/$(db)/documents/users/$(uid); }
+    // 같은 트랜잭션·배치가 끝난 뒤 그 닉네임 예약의 주인이 uid 인가
+    function reservedBy(lower, uid) {
+      return existsAfter(nicknamePath(lower)) && getAfter(nicknamePath(lower)).data.uid == uid;
+    }
+    // 같은 트랜잭션·배치가 끝난 뒤 uid 의 프로필이 그 닉네임을 쓰는가
+    function usedBy(lower, uid) {
+      return existsAfter(userPath(uid)) && getAfter(userPath(uid)).data.nicknameLower == lower;
+    }
+
+    // 프로필. 생성·닉네임 변경·삭제는 본인, cellCount 는 캡처 트랜잭션이 누구나 정확히 ±1 (스펙 §4)
+    // 닉네임은 nicknames 예약과 항상 짝이어야 한다 — 프로필만 직접 써서 유일성을 우회하지 못하게 한다.
     match /users/{uid} {
       allow read: if signedIn();
       allow create: if isOwner(uid) && profileValid(request.resource.data)
-        && request.resource.data.cellCount == 0 && request.resource.data.createdAt == request.time;
+        && request.resource.data.cellCount == 0 && request.resource.data.createdAt == request.time
+        && reservedBy(request.resource.data.nicknameLower, uid);
       allow update: if
         (isOwner(uid) && profileValid(request.resource.data)
-          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['nickname','nicknameLower']))
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['nickname','nicknameLower'])
+          && reservedBy(request.resource.data.nicknameLower, uid))
         || (signedIn()
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['cellCount'])
           && (request.resource.data.cellCount - resource.data.cellCount) in [-1, 1]
           && request.resource.data.cellCount >= 0);
-      allow delete: if isOwner(uid);
+      allow delete: if isOwner(uid) && !existsAfter(nicknamePath(resource.data.nicknameLower));
     }
+
+    // 닉네임 유일성: create 만 허용 → 이미 있으면 update 라서 거부된다.
+    // 예약은 본인 프로필이 그 닉네임을 쓸 때만 만들 수 있고, 쓰는 동안에는 지울 수 없다.
     match /nicknames/{lower} {
       allow read: if signedIn();
-      allow create: if isOwner(request.resource.data.uid) && request.resource.data.keys().hasOnly(['uid']);
+      allow create: if isOwner(request.resource.data.uid) && request.resource.data.keys().hasOnly(['uid'])
+        && usedBy(lower, request.auth.uid);
       allow update: if false;
-      allow delete: if signedIn() && resource.data.uid == request.auth.uid;
+      allow delete: if signedIn() && resource.data.uid == request.auth.uid
+        && !usedBy(lower, request.auth.uid);
     }
+
+    // 셀. 본인 소유로만 쓰고(뺏기 = update), 시각은 서버 시각만.
+    // 문서 ID 는 H3 res 11 주소(15자: '8b' + 10자 + 'fff'), region 은 그 res 7 부모여야 한다.
+    // H3 주소에서 앞 9자 중 2~8번째(기준 셀 + 1~7번 자리)는 부모와 같다.
     match /cells/{cellId} {
       allow read: if signedIn();
       allow create, update: if signedIn()
+        && cellId.matches('^8b[0-9a-f]{10}fff$')
         && request.resource.data.keys().hasOnly(['ownerUid','ownerColor','capturedAt','region'])
         && request.resource.data.ownerUid == request.auth.uid
         && request.resource.data.ownerColor is int
+        && request.resource.data.ownerColor >= 0 && request.resource.data.ownerColor < 7
         && request.resource.data.region is string
+        && request.resource.data.region == '87' + cellId[2:9] + 'ffffff'
         && request.resource.data.capturedAt == request.time;
       allow delete: if false;
     }
@@ -152,9 +179,9 @@ service cloud.firestore {
 ```
 
 ### 클라 트랜잭션
-- **setNickname(nickname)**: 트랜잭션 — `nicknames/{lower}` 읽기(있고 uid≠나 → `NicknameTaken`), `users/{uid}` 읽기 → 있으면 옛 `nicknames/{old}` 삭제 + users 갱신, 없으면 users 생성(색 배정) → `nicknames/{lower}` 생성. 경합으로 규칙에 걸리면 `PERMISSION_DENIED` → `NicknameTaken`으로 매핑
+- **setNickname(nickname)**: 트랜잭션 — `nicknames/{lower}` 읽기(있고 uid≠나 → `NicknameTaken`), `users/{uid}` 읽기 → 있으면 옛 `nicknames/{old}` 삭제 + users 갱신, 없으면 users 생성(색 배정) → `nicknames/{lower}` 생성(이미 내 예약이면 생략 — 같은 닉네임 재제출은 성공). 경합으로 규칙에 걸리면 `PERMISSION_DENIED` → `NicknameTaken`으로 매핑
 - **capture** (플랜 B): 트랜잭션 — `cells/{id}` 읽기 → 이전 소유자 `cellCount -1`, 나 `+1`, cells 갱신
-- **deleteAccount** (플랜 C): `users/{uid}`·`nicknames/{lower}` 삭제 → `FirebaseUser.delete()`. 셀은 남고(소유자 문서 없음) 뺏을 수 있음
+- **deleteAccount** (플랜 C): `users/{uid}`·`nicknames/{lower}` 를 **한 배치로** 삭제(규칙이 짝을 강제) → `FirebaseUser.delete()`. 셀은 남고(소유자 문서 없음) 뺏을 수 있음
 
 ### 알려진 한계 (카드 등록 후 Functions로 승격)
 - 속도·정확도·mock 검사가 클라에만 있어 조작 가능
@@ -174,7 +201,9 @@ service cloud.firestore {
 | Settings | `SettingsKey` | 닉네임 변경, 계정 삭제, 버전, 라이선스 (플랜 C) |
 
 - 인증: 앱 시작 시 익명 로그인 보장
-- 시작 분기: `AppRootViewModel`이 `currentPlayer` 관찰 — 로딩 중 스플래시 유지, null → `OnboardingKey`, 있으면 `MapKey`
+- 시작 분기: `AppRootViewModel`이 `currentPlayer` 관찰 — 로딩 중 스플래시 유지, null → `OnboardingKey`, 있으면 `MapKey`. 온보딩이 떠 있는 동안 프로필이 확인되면 `MapKey` 로 바꾼다
+- 리스너 오류: 5초부터 두 배씩(최대 60초) 다시 구독. 이미 받은 값은 유지하고, 첫 값 전이면 "없음"으로 시작
+- 셀 리스너는 지도 화면이 보이는 동안만 유지(백그라운드 5초 뒤 해제)
 - 백스택 `:app` 하나, feature는 콜백만 노출. Onboarding 완료 → `replaceAll(MapKey)`
 
 ## 6. 디자인 시스템

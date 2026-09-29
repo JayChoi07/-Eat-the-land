@@ -1,7 +1,6 @@
 package com.jaychoi.eattheland.feature.map.ui
 
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.graphics.toArgb
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
@@ -22,7 +21,6 @@ fun EntryProviderScope<NavKey>.mapEntry() {
 @Composable
 internal fun MapRoute(viewModel: MapViewModel = hiltViewModel()) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
-    LaunchedEffect(viewModel) { viewModel.initialize() }
 
     val drawable = uiState.cells.map { cell ->
         val color = TerritoryPalette.color(cell.colorIndex)
