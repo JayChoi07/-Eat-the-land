@@ -3,6 +3,7 @@ package com.jaychoi.eattheland.core.testing
 import com.jaychoi.eattheland.core.data.PlayerRepository
 import com.jaychoi.eattheland.core.model.Player
 import com.jaychoi.eattheland.core.model.PlayerError
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 
@@ -39,8 +40,12 @@ class FakePlayerRepository : PlayerRepository {
     val nicknames = mutableMapOf<String, String?>()
     val nicknameOfCalls = mutableListOf<String>()
 
+    /** 0 보다 크면 응답 전에 그만큼 기다린다(느린 서버 흉내 — 테스트 스케줄러의 가상 시간). */
+    var nicknameDelayMs = 0L
+
     override suspend fun nicknameOf(uid: String): String? {
         nicknameOfCalls += uid
+        if (nicknameDelayMs > 0) delay(nicknameDelayMs)
         return nicknames[uid]
     }
 }

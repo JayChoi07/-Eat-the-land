@@ -426,6 +426,36 @@ class MapViewModelTest {
         }
     }
 
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun `닫은 뒤 늦게 온 닉네임 응답이 새 카드를 덮어쓰지 않는다`() = runTest {
+        players.playerFlow.value = Player("me", "나", 0, 3)
+        players.nicknames["u2"] = "산책왕"
+        players.nicknameDelayMs = 1_000L
+        seedTwoCells()
+        val other = grid.cellOf(otherPoint)
+        val vm = viewModel()
+        vm.uiState.test {
+            loadCells(vm)
+            vm.onEvent(MapEvent.MapTapped(otherPoint))
+            awaitItemUntil { it.selectedCell?.owner == CellOwner.Loading }
+            vm.onEvent(MapEvent.CellCardDismissed)
+            awaitItemUntil { it.selectedCell == null }
+            // 그 사이 내가 그 셀을 잡았다.
+            territory.cells.value = territory.cells.value.map {
+                if (it.id == other) it.copy(ownerUid = "me") else it
+            }
+            awaitItemUntil { s -> s.cells.first { it.id == other }.colorIndex == null }
+            vm.onEvent(MapEvent.MapTapped(otherPoint))
+            awaitItemUntil { it.selectedCell?.owner == CellOwner.Me }
+            advanceTimeBy(1_001) // 옛 조회가 이제 응답한다
+            runCurrent()
+            expectNoEvents()
+            assertEquals(CellOwner.Me, vm.uiState.value.selectedCell?.owner)
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
     @Test
     fun `산책이 시작되면 카드가 닫힌다`() = runTest {
         players.playerFlow.value = Player("me", "나", 0, 3)

@@ -69,6 +69,9 @@ class MapViewModel @Inject constructor(
     private var latestCells: List<Cell> = emptyList()
     private var cardTimer: Job? = null
 
+    /** 진행 중인 소유자 조회. 카드를 닫거나 바꾸면 취소한다 — 늦게 온 응답이 새 카드를 덮어쓰지 않게(최종 리뷰 I1). */
+    private var ownerLookup: Job? = null
+
     @OptIn(ExperimentalCoroutinesApi::class)
     private val cells = local.map { it.regions }
         .distinctUntilChanged()
@@ -224,6 +227,7 @@ class MapViewModel @Inject constructor(
     private fun select(cell: SelectedCell) {
         val whileTracking = uiState.value.isTracking
         local.update { it.copy(selected = Selection(cell, whileTracking)) }
+        ownerLookup?.cancel()
         cardTimer?.cancel()
         cardTimer = viewModelScope.launch {
             delay(CARD_TIMEOUT_MS)
@@ -232,7 +236,7 @@ class MapViewModel @Inject constructor(
     }
 
     private fun loadOwner(id: CellId, ownerUid: String) {
-        viewModelScope.launch {
+        ownerLookup = viewModelScope.launch {
             val owner = players.nicknameOf(ownerUid)?.let { CellOwner.Named(it) } ?: CellOwner.Gone
             local.update { l ->
                 val s = l.selected
@@ -248,6 +252,8 @@ class MapViewModel @Inject constructor(
     private fun closeCard() {
         cardTimer?.cancel()
         cardTimer = null
+        ownerLookup?.cancel()
+        ownerLookup = null
         local.update { it.copy(selected = null) }
     }
 

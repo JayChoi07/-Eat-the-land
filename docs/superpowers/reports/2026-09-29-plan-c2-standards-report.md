@@ -76,3 +76,14 @@
 | `FakeCellDataSource` | `walkedAt` 갱신 | 미갱신 | `:core:testing` 에 Firebase 타입 없음, 읽는 테스트 없음 |
 
 스펙 본문 §8·§9·§10·§11 은 이 표대로 갱신됨(이 커밋).
+
+## 최종 리뷰 (Codex gpt-6-astra, effort high, 읽기 전용, 범위 `7deab17..cd189fd`)
+
+판정 With fixes → Important 1건 반영, 4게이트 통과·단위 189(+1). Review Focus 5개 모두 추적, 추가 결함 없음.
+
+| # | 등급 | 지적 | 처리 |
+|---|---|---|---|
+| 1 | Important | 닫은 카드의 닉네임 조회가 살아 있다가 같은 셀 ID 의 새 카드를 덮어씀 — 남의 셀 탭(응답 지연) → 닫기 → 그 셀 캡처 → 다시 탭하면 "내 땅" 이 옛 소유자 이름·"떠난 사람" 으로 바뀜 | `MapViewModel.ownerLookup: Job` — 카드를 닫거나(`closeCard`) 새로 고를 때(`select`) 취소. `FakePlayerRepository.nicknameDelayMs` 로 지연 응답을 흉내 낸 `MapViewModelTest` `닫은 뒤 늦게 온 닉네임 응답이 새 카드를 덮어쓰지 않는다` RED→GREEN |
+| 2 | Minor | 산책 시작으로 숨겨진 카드가 `local.selected` 에 남아, 5초 안에 같은 셀을 다시 탭하면 "같은 셀 재탭" 으로 닫혀 두 번 탭해야 뜸 | 이월(5초 창 안의 한 번 더 탭) |
+
+리뷰어 보류 4건(실산책 거리·세션 중 닉네임 신선도·5초 뒤 도착하는 보관된 쓰기·치팅 방지/이력 화면/보존 정책)은 스펙대로거나 범위 밖 — 결함 아님(레저 `Final: Ruling:`).
