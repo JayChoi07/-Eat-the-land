@@ -50,9 +50,17 @@ service cloud.firestore {
         && !usedBy(lower, request.auth.uid);
     }
 
+    // res 11 셀 주소의 res 8 부모. H3 주소는 3비트 자리를 16진수로 찍어 res 8 경계(42비트)가
+    // 10번째 문자 중간에 걸린다 — 앞 9자는 같고, 10번째 문자는 최하위 비트만 1로 채우고, 나머지는 'f'.
+    // (h3-js cellToParent 와 한국 좌표 2만 점 대조, 2026-09-29)
+    function res8Parent(cellId) {
+      let odd = {'0':'1','1':'1','2':'3','3':'3','4':'5','5':'5','6':'7','7':'7',
+                 '8':'9','9':'9','a':'b','b':'b','c':'d','d':'d','e':'f','f':'f'};
+      return '88' + cellId[2:9] + odd[cellId[9]] + 'fffff';
+    }
+
     // 셀. 본인 소유로만 쓰고(뺏기 = update), capturedAt 은 서버 시각, walkedAt 은 클라가 밟은 시각(미래 금지).
-    // 문서 ID 는 H3 res 11 주소(15자: '8b' + 10자 + 'fff'), region 은 그 res 7 부모여야 한다.
-    // H3 주소에서 앞 9자 중 2~8번째(기준 셀 + 1~7번 자리)는 부모와 같다.
+    // 문서 ID 는 H3 res 11 주소(15자: '8b' + 10자 + 'fff'), region 은 그 res 8 부모여야 한다.
     match /cells/{cellId} {
       allow read: if signedIn();
       allow create, update: if signedIn()
@@ -62,7 +70,7 @@ service cloud.firestore {
         && request.resource.data.ownerColor is int
         && request.resource.data.ownerColor >= 0 && request.resource.data.ownerColor < 7
         && request.resource.data.region is string
-        && request.resource.data.region == '87' + cellId[2:9] + 'ffffff'
+        && request.resource.data.region == res8Parent(cellId)
         && request.resource.data.capturedAt == request.time
         && request.resource.data.walkedAt is timestamp
         && request.resource.data.walkedAt <= request.time;

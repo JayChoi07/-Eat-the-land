@@ -3,7 +3,8 @@
   "private": true,
   "scripts": {
     "test": "firebase emulators:exec --only firestore --project demo-eat-the-land \"jest --runInBand\"",
-    "seed": "ts-node scripts/seed.ts"
+    "seed": "ts-node scripts/seed.ts",
+    "reset": "ts-node scripts/reset.ts"
   },
   "devDependencies": {
     "@firebase/rules-unit-testing": "^4.0.0",

@@ -147,9 +147,12 @@ describe('nicknames', () => {
 });
 
 describe('cells', () => {
-  // 서울시청 res 11 셀과 그 res 7 부모 (h3-js 로 확인한 실제 값)
+  // 서울시청 res 11 셀과 그 res 8 부모 (h3-js cellToParent 로 확인한 실제 값, 2026-09-29)
   const CELL = '8b30e1d8c0b1fff';
-  const REGION = '8730e1d8cffffff';
+  const REGION = '8830e1d8c1fffff';
+  // 10번째 문자가 a~f 인 셀 — res8Parent 의 문자 매핑 하반부를 지난다
+  const CELL_HIGH = '8b30e1d8ca0efff';
+  const REGION_HIGH = '8830e1d8cbfffff';
   const cell = (uid: string, over: Record<string, unknown> = {}) => ({
     ownerUid: uid, ownerColor: 2, capturedAt: serverTimestamp(), walkedAt: Timestamp.now(), region: REGION, ...over,
   });
@@ -169,8 +172,12 @@ describe('cells', () => {
     await assertFails(setDoc(doc(alice(), 'cells/8b30e1d8c0b1ff'), cell('alice')));
     await assertFails(setDoc(doc(alice(), 'cells/8b30e1d8c0b1000'), cell('alice')));
   });
-  test('region 은 그 셀의 res 7 부모여야 한다', async () => {
-    await assertFails(setDoc(doc(alice(), `cells/${CELL}`), cell('alice', { region: '8730e1d8dffffff' })));
+  test('region 은 그 셀의 res 8 부모여야 한다 — res 7 부모·같은 res 7 아래 형제·엉뚱한 값 거부', async () => {
+    await assertSucceeds(setDoc(doc(alice(), `cells/${CELL_HIGH}`), cell('alice', { region: REGION_HIGH })));
+    await assertFails(setDoc(doc(alice(), `cells/${CELL}`), cell('alice', { region: '8730e1d8cffffff' })));
+    await assertFails(setDoc(doc(alice(), `cells/${CELL}`), cell('alice', { region: '8830e1d8c3fffff' })));
+    await assertFails(setDoc(doc(alice(), `cells/${CELL}`), cell('alice', { region: '8830e1d8c0fffff' })));
+    await assertFails(setDoc(doc(alice(), `cells/${CELL_HIGH}`), cell('alice', { region: REGION })));
     await assertFails(setDoc(doc(alice(), `cells/${CELL}`), cell('alice', { region: 'zz' })));
     await assertFails(setDoc(doc(alice(), `cells/${CELL}`), cell('alice', { region: 7 })));
   });
