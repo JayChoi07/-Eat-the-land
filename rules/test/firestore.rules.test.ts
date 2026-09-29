@@ -151,7 +151,7 @@ describe('cells', () => {
   const CELL = '8b30e1d8c0b1fff';
   const REGION = '8730e1d8cffffff';
   const cell = (uid: string, over: Record<string, unknown> = {}) => ({
-    ownerUid: uid, ownerColor: 2, capturedAt: serverTimestamp(), region: REGION, ...over,
+    ownerUid: uid, ownerColor: 2, capturedAt: serverTimestamp(), walkedAt: Timestamp.now(), region: REGION, ...over,
   });
   test('본인 소유로 생성·뺏기(update) 가능, 타인 uid·클라 시각·여분 필드·삭제·비로그인은 거부', async () => {
     await assertSucceeds(setDoc(doc(alice(), `cells/${CELL}`), cell('alice')));
@@ -179,6 +179,18 @@ describe('cells', () => {
     await assertFails(setDoc(doc(alice(), `cells/${CELL}`), cell('alice', { ownerColor: -1 })));
     await assertFails(setDoc(doc(alice(), `cells/${CELL}`), cell('alice', { ownerColor: '2' })));
   });
+  test('walkedAt 은 필수 timestamp 이고 미래 시각은 거부, 과거는 통과', async () => {
+    const withoutWalkedAt: Record<string, unknown> = { ...cell('alice') };
+    delete withoutWalkedAt.walkedAt;
+    await assertFails(setDoc(doc(alice(), `cells/${CELL}`), withoutWalkedAt));
+    await assertFails(setDoc(doc(alice(), `cells/${CELL}`), cell('alice', { walkedAt: 1_700_000_000 })));
+    await assertFails(setDoc(doc(alice(), `cells/${CELL}`), cell('alice', {
+      walkedAt: Timestamp.fromMillis(Date.now() + 60_000),
+    })));
+    await assertSucceeds(setDoc(doc(alice(), `cells/${CELL}`), cell('alice', {
+      walkedAt: Timestamp.fromMillis(Date.now() - 6 * 60 * 60 * 1000),
+    })));
+  });
   test('읽기는 로그인한 사람만', async () => {
     await assertSucceeds(getDoc(doc(bob(), `cells/${CELL}`)));
     await assertFails(getDoc(doc(anon(), `cells/${CELL}`)));
@@ -188,7 +200,7 @@ describe('cells', () => {
     await seedUser('bob', { cellCount: 0 });
     await env.withSecurityRulesDisabled(async (ctx) => {
       await setDoc(doc(ctx.firestore() as unknown as Firestore, `cells/${CELL}`), {
-        ownerUid: 'alice', ownerColor: 1, capturedAt: Timestamp.now(), region: REGION,
+        ownerUid: 'alice', ownerColor: 1, capturedAt: Timestamp.now(), walkedAt: Timestamp.now(), region: REGION,
       });
     });
     const db = bob();

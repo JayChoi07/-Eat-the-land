@@ -16,7 +16,8 @@ const db = getFirestore();
   for (const [i, [dl, dg]] of offsets.entries()) {
     const cell = latLngToCell(lat + dl, lng + dg, 11);
     await db.doc(`cells/${cell}`).set({
-      ownerUid: `seed-${i}`, ownerColor: i + 1, capturedAt: Timestamp.now(), region: cellToParent(cell, 7),
+      ownerUid: `seed-${i}`, ownerColor: i + 1, capturedAt: Timestamp.now(), walkedAt: Timestamp.now(),
+      region: cellToParent(cell, 7),
     });
     console.log('seeded', cell);
   }

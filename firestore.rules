@@ -50,20 +50,22 @@ service cloud.firestore {
         && !usedBy(lower, request.auth.uid);
     }
 
-    // 셀. 본인 소유로만 쓰고(뺏기 = update), 시각은 서버 시각만.
+    // 셀. 본인 소유로만 쓰고(뺏기 = update), capturedAt 은 서버 시각, walkedAt 은 클라가 밟은 시각(미래 금지).
     // 문서 ID 는 H3 res 11 주소(15자: '8b' + 10자 + 'fff'), region 은 그 res 7 부모여야 한다.
     // H3 주소에서 앞 9자 중 2~8번째(기준 셀 + 1~7번 자리)는 부모와 같다.
     match /cells/{cellId} {
       allow read: if signedIn();
       allow create, update: if signedIn()
         && cellId.matches('^8b[0-9a-f]{10}fff$')
-        && request.resource.data.keys().hasOnly(['ownerUid','ownerColor','capturedAt','region'])
+        && request.resource.data.keys().hasOnly(['ownerUid','ownerColor','capturedAt','walkedAt','region'])
         && request.resource.data.ownerUid == request.auth.uid
         && request.resource.data.ownerColor is int
         && request.resource.data.ownerColor >= 0 && request.resource.data.ownerColor < 7
         && request.resource.data.region is string
         && request.resource.data.region == '87' + cellId[2:9] + 'ffffff'
-        && request.resource.data.capturedAt == request.time;
+        && request.resource.data.capturedAt == request.time
+        && request.resource.data.walkedAt is timestamp
+        && request.resource.data.walkedAt <= request.time;
       allow delete: if false;
     }
   }
