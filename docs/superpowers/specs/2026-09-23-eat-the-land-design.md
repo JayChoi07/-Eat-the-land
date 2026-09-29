@@ -204,6 +204,7 @@ service cloud.firestore {
 - 시작 분기: `AppRootViewModel`이 `currentPlayer` 관찰 — 로딩 중 스플래시 유지, null → `OnboardingKey`, 있으면 `MapKey`. 온보딩이 떠 있는 동안 프로필이 확인되면 `MapKey` 로 바꾼다
 - 리스너 오류: 5초부터 두 배씩(최대 60초) 다시 구독. 이미 받은 값은 유지하고, 첫 값 전이면 "없음"으로 시작
 - 셀 리스너는 지도 화면이 보이는 동안만 유지(백그라운드 5초 뒤 해제)
+- 지도 시작 실패(카카오 인증·통신 오류, `onMapError`): "지도를 불러오지 못했어요" 문구 + "다시 시도" 버튼. 다시 시도는 MapView 를 새로 시작한다 (2026-09-29 결정, 플랜 B 첫 작업)
 - 백스택 `:app` 하나, feature는 콜백만 노출. Onboarding 완료 → `replaceAll(MapKey)`
 
 ## 6. 디자인 시스템
