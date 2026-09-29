@@ -7,4 +7,5 @@ sealed interface CaptureDecision {
     data class Skip(val reason: SkipReason) : CaptureDecision
 }
 
-enum class SkipReason { MockLocation, Inaccurate, TooFast, SameCell }
+/** Unconfirmed: 새 셀의 첫 fix — 다음 fix 도 같은 셀이면 캡처한다(v3 2연속). */
+enum class SkipReason { MockLocation, Inaccurate, TooFast, SameCell, Unconfirmed }
