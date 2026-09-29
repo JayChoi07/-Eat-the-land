@@ -62,6 +62,8 @@ class MapScreenshotTest {
             player = Player("u", "땅주인", 0, 42),
             isTracking = true,
             walkCellCount = 3,
+            distanceMeters = 1_830.0,
+            elapsedMillis = 63 * 60_000L,
             pendingCount = 2,
             isGpsWeak = true,
         ),

@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.text.TextAutoSize
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.filled.Settings
@@ -27,6 +28,7 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.jaychoi.eattheland.core.designsystem.theme.AppTheme
 import com.jaychoi.eattheland.core.model.Player
 import com.jaychoi.eattheland.feature.map.R
@@ -71,13 +73,13 @@ private fun MapOverlays(
 ) {
     Box(modifier = Modifier.fillMaxSize().safeDrawingPadding()) {
         uiState.player?.let { player ->
-            // 좌우 여백은 우상단 아이콘 2개(≈96dp)와 겹치지 않기 위한 것.
-            StatusChip(
+            // 오른쪽 여백은 우상단 아이콘 2개(≈120dp)와 겹치지 않기 위한 것. 산책 문구가 길어 왼쪽부터 폭을 다 쓴다.
+            StatusCard(
                 uiState,
                 player,
                 Modifier
-                    .align(Alignment.TopCenter)
-                    .padding(top = 16.dp, start = 72.dp, end = 104.dp),
+                    .align(Alignment.TopStart)
+                    .padding(top = 16.dp, start = 16.dp, end = 120.dp),
             )
         }
         Row(modifier = Modifier.align(Alignment.TopEnd).padding(16.dp)) {
@@ -124,43 +126,74 @@ private fun MapOverlays(
     }
 }
 
+/** 상단 카드(스펙 C §8): 평소 "닉네임 · N칸", 산책 중 "12칸 · 1.8 km · 24분 · 대기 2". GPS 배너는 카드 아래. */
 @Composable
-private fun StatusChip(uiState: MapUiState, player: Player, modifier: Modifier = Modifier) {
-    Surface(
-        modifier = modifier,
-        shape = MaterialTheme.shapes.large,
-        color = MaterialTheme.colorScheme.surfaceContainer,
-        tonalElevation = 2.dp,
-    ) {
-        Column(
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
+private fun StatusCard(uiState: MapUiState, player: Player, modifier: Modifier = Modifier) {
+    Column(modifier = modifier, horizontalAlignment = Alignment.Start) {
+        Surface(
+            shape = MaterialTheme.shapes.large,
+            color = MaterialTheme.colorScheme.surfaceContainer,
+            tonalElevation = 2.dp,
         ) {
+            // 산책 중 문구는 길어서(칸·거리·시간·대기) 한 줄에 맞게 글자를 줄인다 — 단어 중간에서 꺾이지 않게.
             Text(
-                text = stringResource(R.string.map_stat_cells, player.nickname, player.cellCount),
+                text = if (uiState.isTracking) walkStats(uiState) else idleStats(player),
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
                 style = MaterialTheme.typography.titleMedium,
+                maxLines = 1,
+                autoSize = TextAutoSize.StepBased(minFontSize = 10.sp, maxFontSize = 16.sp),
             )
-            if (uiState.isTracking) {
-                Text(
-                    stringResource(R.string.map_walk_count, uiState.walkCellCount),
-                    style = MaterialTheme.typography.bodyMedium,
-                )
-            }
-            if (uiState.pendingCount > 0) {
-                Text(
-                    stringResource(R.string.map_pending_count, uiState.pendingCount),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-            if (uiState.isGpsWeak) {
+        }
+        if (uiState.isGpsWeak) {
+            Spacer(Modifier.height(8.dp))
+            Surface(
+                shape = MaterialTheme.shapes.medium,
+                color = MaterialTheme.colorScheme.errorContainer,
+            ) {
                 Text(
                     stringResource(R.string.map_gps_weak),
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.error,
+                    color = MaterialTheme.colorScheme.onErrorContainer,
                 )
             }
         }
+    }
+}
+
+@Composable
+private fun idleStats(player: Player): String =
+    stringResource(R.string.map_stat_cells, player.nickname, player.cellCount)
+
+@Composable
+private fun walkStats(uiState: MapUiState): String {
+    val base = stringResource(
+        R.string.map_stat_walk,
+        uiState.walkCellCount,
+        distanceText(uiState.distanceMeters),
+        durationText(uiState.elapsedMillis ?: 0L),
+    )
+    return if (uiState.pendingCount > 0) {
+        base + stringResource(R.string.map_stat_pending_suffix, uiState.pendingCount)
+    } else {
+        base
+    }
+}
+
+@Composable
+private fun distanceText(meters: Double): String {
+    val d = formatDistance(meters)
+    val unit = if (d.isKm) R.string.map_distance_km else R.string.map_distance_m
+    return stringResource(unit, d.amount)
+}
+
+@Composable
+private fun durationText(millis: Long): String {
+    val t = formatDuration(millis)
+    return when {
+        t.hours == 0 -> stringResource(R.string.map_duration_min, t.minutes)
+        t.minutes == 0 -> stringResource(R.string.map_duration_hour, t.hours)
+        else -> stringResource(R.string.map_duration_hour_min, t.hours, t.minutes)
     }
 }
 
@@ -226,6 +259,8 @@ private fun MapScreenPreview() {
                 player = Player("u", "땅주인", 0, 42),
                 isTracking = true,
                 walkCellCount = 3,
+                distanceMeters = 1_830.0,
+                elapsedMillis = 24 * 60_000L,
                 pendingCount = 2,
                 isGpsWeak = true,
             ),

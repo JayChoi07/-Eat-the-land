@@ -34,7 +34,8 @@ class MapViewModelTest {
     private val locations = FakeLocationRepository()
     private val seoul = LatLngPoint(37.5661, 126.9780)
 
-    private fun viewModel() = MapViewModel(territory, players, grid, tracking, locations)
+    private var now = 0L
+    private fun viewModel() = MapViewModel(territory, players, grid, tracking, locations) { now }
 
     private fun seedTwoCells() {
         val mine = grid.cellOf(seoul)
@@ -244,6 +245,39 @@ class MapViewModelTest {
             expectNoEvents()
             vm.onEvent(MapEvent.MyLocationClicked)
             awaitItemUntil { it.isFollowing }
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun `산책 중엔 거리와 1초마다 갱신되는 경과 시간, 끝나면 경과 시간은 null`() = runTest {
+        val vm = viewModel()
+        vm.uiState.test {
+            assertNull(awaitItem().elapsedMillis)
+            now = 10_000L
+            tracking.onWalkStarted(nowMillis = 10_000L)
+            tracking.onDistance(1_830.0)
+            val started = awaitItemUntil { it.isTracking && it.distanceMeters == 1_830.0 }
+            assertEquals(0L, started.elapsedMillis)
+            now = 13_000L
+            advanceTimeBy(3_001)
+            assertEquals(3_000L, awaitItemUntil { it.elapsedMillis == 3_000L }.elapsedMillis)
+            tracking.onWalkStopped(nowMillis = 13_000L)
+            assertNull(awaitItemUntil { !it.isTracking }.elapsedMillis)
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun `줌 아웃 상태에서는 GPS 배너를 숨긴다`() = runTest {
+        val vm = viewModel()
+        vm.uiState.test {
+            tracking.onWalkStarted(nowMillis = 0L)
+            tracking.onLocation(seoul, isGpsWeak = true)
+            assertTrue(awaitItemUntil { it.isGpsWeak }.isGpsWeak)
+            vm.onEvent(MapEvent.CameraIdle(seoul, zoom = 13f, byUser = false))
+            assertEquals(false, awaitItemUntil { it.isZoomedOut }.isGpsWeak)
             cancelAndIgnoreRemainingEvents()
         }
     }

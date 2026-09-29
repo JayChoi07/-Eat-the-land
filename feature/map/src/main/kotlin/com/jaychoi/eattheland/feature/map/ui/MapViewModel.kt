@@ -2,6 +2,7 @@ package com.jaychoi.eattheland.feature.map.ui
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.jaychoi.eattheland.core.common.Clock
 import com.jaychoi.eattheland.core.common.grid.HexGrid
 import com.jaychoi.eattheland.core.data.PlayerRepository
 import com.jaychoi.eattheland.core.data.TerritoryRepository
@@ -15,6 +16,7 @@ import com.jaychoi.eattheland.core.model.TrackingState
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -22,6 +24,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
@@ -41,6 +44,7 @@ class MapViewModel @Inject constructor(
     private val grid: HexGrid,
     tracking: TrackingRepository,
     private val locations: LocationRepository,
+    clock: Clock,
 ) : ViewModel() {
 
     /** 이 화면 안에서만 사는 상태. 스트림(셀·플레이어·추적·큐)과 combine 해 UiState 가 된다. */
@@ -62,14 +66,29 @@ class MapViewModel @Inject constructor(
         .distinctUntilChanged()
         .flatMapLatest(::cellsIn)
 
+    /** 추적 상태 + 지금 시각. 산책 중일 때만 1초마다 시각이 흘러 경과 시간이 다시 그려진다(스펙 C §8). */
+    private data class WalkView(val state: TrackingState, val nowMillis: Long?)
+
+    private val ticker = flow {
+        while (true) {
+            emit(clock.nowMillis())
+            delay(TICK_MS)
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    private val walk: Flow<WalkView> = tracking.state.flatMapLatest { s ->
+        if (s.isTracking) ticker.map { WalkView(s, it) } else flowOf(WalkView(s, null))
+    }
+
     val uiState: StateFlow<MapUiState> = combine(
         cells,
         players.currentPlayer,
-        tracking.state,
+        walk,
         territory.pendingCount,
         local,
-    ) { list, player, walk, pending, l ->
-        toUiState(list, player, walk, pending, l)
+    ) { list, player, view, pending, l ->
+        toUiState(list, player, view, pending, l)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), MapUiState())
 
     fun onEvent(event: MapEvent) {
@@ -100,29 +119,41 @@ class MapViewModel @Inject constructor(
     private fun toUiState(
         list: List<Cell>,
         player: Player?,
-        walk: TrackingState,
+        view: WalkView,
         pending: Int,
         l: Local,
-    ) = MapUiState(
-        player = player,
-        cells = list.map { it.toPolygon(player) },
-        isZoomedOut = l.isZoomedOut,
-        mapLoadFailed = l.mapLoadFailed,
-        mapAttempt = l.mapAttempt,
-        camera = l.camera,
-        // 산책 중엔 추적 점, 끝나면 새로 읽은 마지막 위치(WalkStopped 가 갱신)를 우선한다.
-        myLocation = if (walk.isTracking) {
-            walk.lastPoint ?: l.lastKnown
-        } else {
-            l.lastKnown ?: walk.lastPoint
-        },
-        isFollowing = l.isFollowing,
-        isTracking = walk.isTracking,
-        walkCellCount = walk.capturedCount,
-        pendingCount = pending,
-        isGpsWeak = walk.isTracking && walk.isGpsWeak,
-        showPermissionNotice = l.showPermissionNotice,
-    )
+    ): MapUiState {
+        val walk = view.state
+        return MapUiState(
+            player = player,
+            cells = list.map { it.toPolygon(player) },
+            isZoomedOut = l.isZoomedOut,
+            mapLoadFailed = l.mapLoadFailed,
+            mapAttempt = l.mapAttempt,
+            camera = l.camera,
+            // 산책 중엔 추적 점, 끝나면 새로 읽은 마지막 위치(WalkStopped 가 갱신)를 우선한다.
+            myLocation = if (walk.isTracking) {
+                walk.lastPoint ?: l.lastKnown
+            } else {
+                l.lastKnown ?: walk.lastPoint
+            },
+            isFollowing = l.isFollowing,
+            isTracking = walk.isTracking,
+            walkCellCount = walk.capturedCount,
+            distanceMeters = walk.distanceMeters,
+            elapsedMillis = elapsedOf(walk, view.nowMillis),
+            pendingCount = pending,
+            // 줌 아웃 안내와 같은 자리를 쓰므로 둘이 동시에 뜨지 않는다.
+            isGpsWeak = walk.isTracking && walk.isGpsWeak && !l.isZoomedOut,
+            showPermissionNotice = l.showPermissionNotice,
+        )
+    }
+
+    private fun elapsedOf(walk: TrackingState, nowMillis: Long?): Long? {
+        val startedAt = walk.startedAtMillis ?: return null
+        val now = nowMillis ?: return null
+        return (now - startedAt).coerceAtLeast(0L)
+    }
 
     private fun cellsIn(regions: Set<CellId>): Flow<List<Cell>> =
         if (regions.isEmpty()) flowOf(emptyList()) else territory.observeCells(regions)
@@ -165,5 +196,6 @@ class MapViewModel @Inject constructor(
 
     private companion object {
         const val STOP_TIMEOUT_MS = 5_000L
+        const val TICK_MS = 1_000L
     }
 }

@@ -34,6 +34,10 @@ data class MapUiState(
     val isFollowing: Boolean = true,
     val isTracking: Boolean = false,
     val walkCellCount: Int = 0,
+    /** 이번 산책 거리(판정 통과 fix 사이 합). */
+    val distanceMeters: Double = 0.0,
+    /** 산책 시작 후 경과. 산책 중이 아니면 null. ViewModel 이 1초마다 갱신한다. */
+    val elapsedMillis: Long? = null,
     val pendingCount: Int = 0,
     val isGpsWeak: Boolean = false,
     /** "산책 시작" 을 눌렀는데 위치 권한을 거부한 뒤. */

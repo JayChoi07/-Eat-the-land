@@ -6,13 +6,18 @@
     <string name="map_retry">다시 시도</string>
     <string name="map_walk_start">산책 시작</string>
     <string name="map_walk_stop">산책 종료</string>
-    <string name="map_walk_count">이번 산책 %1$d칸</string>
-    <string name="map_pending_count">전송 대기 %1$d칸</string>
-    <string name="map_gps_weak">GPS 신호가 약해요</string>
     <string name="map_permission_notice">산책하려면 위치 권한이 필요해요</string>
     <string name="map_open_settings">설정 열기</string>
     <string name="map_dismiss">닫기</string>
     <string name="map_my_location">내 위치</string>
     <string name="map_open_ranking">랭킹</string>
     <string name="map_open_app_settings">설정</string>
+    <string name="map_stat_walk">%1$d칸 · %2$s · %3$s</string>
+    <string name="map_stat_pending_suffix"> · 대기 %1$d</string>
+    <string name="map_distance_m">%1$s m</string>
+    <string name="map_distance_km">%1$s km</string>
+    <string name="map_duration_min">%1$d분</string>
+    <string name="map_duration_hour">%1$d시간</string>
+    <string name="map_duration_hour_min">%1$d시간 %2$d분</string>
+    <string name="map_gps_weak">GPS 신호가 약해요 · 하늘이 보이는 곳에서 잡혀요</string>
 </resources>
