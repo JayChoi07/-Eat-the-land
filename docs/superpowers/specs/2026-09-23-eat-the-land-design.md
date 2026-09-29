@@ -43,7 +43,7 @@
 | 규칙 | 값 |
 |---|---|
 | 캡처 | 새 셀에서 걷기 판정을 통과한 fix 가 **2번 연속**이면 내 것(v3). 남의 셀도 즉시 뺏김 |
-| 걷기 판정 | 속도 ≤ 20 km/h ∧ GPS 정확도 ≤ 50 m ∧ mock location 아님. 속도는 제공자 값, 없으면 직전 fix 와의 거리/시간(v3, 첫 fix 는 통과). **클라이언트가 판정**(서버 없음). 보안 규칙은 "본인 uid·서버 시각·walkedAt ≤ 서버 시각"만 검증 |
+| 걷기 판정 | 속도 ≤ 20 km/h ∧ GPS 정확도 ≤ 50 m ∧ mock location 아님. 속도는 제공자 값, 없으면 직전 fix 와의 거리/시간(v3, 첫 fix 는 통과). **클라이언트가 판정**(서버 없음). 보안 규칙은 "본인 uid·서버 시각·walkedAt ≤ 서버 시각 + 5분(기기 시계 오차)"만 검증. 속도 계산의 시각은 벽시계가 아니라 부팅 후 경과 시간(`elapsedRealtime`) |
 | 이동 구간 | fix 사이 선분은 채우지 않는다 — 빨리 지나가면 덜 칠해진다(v3) |
 | 점수 | 현재 보유 셀 수 (`users.cellCount`, 캡처하는 클라가 ±1 트랜잭션) |
 | 랭킹 | 전체 누적 상위 100 + 내 순위 |
@@ -99,7 +99,7 @@ R-12-02 매트릭스 — Map 화면 "상태별 허용 이벤트 다름"(Idle↔T
 
 ### 위치 추적 서비스 (`:app`, 플랜 B)
 - FGS `foregroundServiceType="location"`, `START_STICKY`, `@EntryPoint`로 의존 획득. sticky 재시작(`intent == null`)은 Android 14+ 가 백그라운드 위치 FGS 시작을 금지하므로 즉시 `stopSelf()`
-- 위치: FusedLocation 5초·10 m·HIGH_ACCURACY. 위치를 못 구하면(권한 회수·GPS 꺼짐) `LocationUpdate.Unavailable` → "GPS 신호가 약해요"
+- 위치: FusedLocation 5초·HIGH_ACCURACY, 최소 이동 거리 없음(v3 — 새 셀에서 멈춰도 두 번째 fix 가 와야 2연속 캡처가 된다). 위치를 못 구하면(권한 회수·GPS 꺼짐) `LocationUpdate.Unavailable` → "GPS 신호가 약해요", 판정 후보·직전 fix 초기화(마지막 셀만 유지)
 - 캡처는 Firestore 트랜잭션(온라인 필요). 오프라인(`UNAVAILABLE`)이면 로컬 큐(`:core:datastore`)에 넣는다 — 최대 300칸(초과 시 가장 오래된 것 폐기), 24시간 지나면 폐기, 같은 셀은 하나. 연결이 돌아오면 WorkManager(`NetworkType.CONNECTED`)가 앱이 꺼져 있어도 오래된 순으로 재전송한다. 재전송은 그 사이 남이 가져간 칸도 다시 뺏는다. 산책을 시작할 때도 한 번 비운다 (사용자 결정 2026-09-29)
 - 알림: 채널 "산책 추적", "산책 중 · 이번 산책 N칸", 액션 "종료". 이번 산책 칸 수는 캡처 + 큐 항목(이미 내 셀은 제외)
 - 팩 R-14-03 위반(Service 진입점) — 플랜 B 표준 준수 보고에 기록
@@ -117,7 +117,7 @@ Cloud Functions 없음. 모든 쓰기는 클라이언트가 하고 **보안 규�
 |---|---|---|---|
 | `users` | uid | `nickname`(2~12자 규칙 매치), `nicknameLower`(== nickname.lower()), `color`(0..6 int), `cellCount`(int), `createdAt`(request.time) | read 전체. create/update/delete 본인. create 시 `cellCount == 0`. 프로필 update 는 nickname·nicknameLower 만 변경. **닉네임은 같은 트랜잭션이 끝난 뒤 `nicknames/{lower}` 예약의 주인이 본인이어야 한다**(프로필만 직접 써서 유일성 우회 금지). delete 는 예약도 함께 지울 때만. `cellCount` update 는 누구나 정확히 ±1 만 (캡처 트랜잭션용) |
 | `nicknames` | nicknameLower | `uid` | read 전체. **create 만** 본인 uid 로(이미 있으면 update 라서 거부 → 유일성 보장), 본인 프로필이 그 닉네임을 쓸 때만(선점 금지). delete 는 본인이 그 닉네임을 더 쓰지 않을 때만. update 금지 |
-| `cells` | H3 res11 | `ownerUid`(== auth.uid), `ownerColor`(0..6 int), `capturedAt`(== request.time), `walkedAt`(timestamp, 클라가 밟은 시각, ≤ request.time — v3), `region`(그 셀의 res 8 부모 — v3) | read 전체. create/update 본인 소유로만(뺏기 = update). 문서 ID 는 H3 res 11 형식(`8b` + 10자 + `fff`)만. delete 금지. 클라는 받은 문서도 `HexGrid.isValidCell` 로 다시 거른다 |
+| `cells` | H3 res11 | `ownerUid`(== auth.uid), `ownerColor`(0..6 int), `capturedAt`(== request.time), `walkedAt`(timestamp, 클라가 밟은 시각, ≤ request.time + 5분 — v3), `region`(그 셀의 res 8 부모 — v3) | read 전체. create/update 본인 소유로만(뺏기 = update). 문서 ID 는 H3 res 11 형식(`8b` + 10자 + `fff`)만. delete 금지. 클라는 받은 문서도 `HexGrid.isValidCell` 로 다시 거른다 |
 
 색 배정: 클라가 `uid.hashCode() mod 7` (서버 카운터 없음).
 
@@ -184,7 +184,8 @@ service cloud.firestore {
       return '88' + cellId[2:9] + odd[cellId[9]] + 'fffff';
     }
 
-    // 셀. 본인 소유로만 쓰고(뺏기 = update), capturedAt 은 서버 시각, walkedAt 은 클라가 밟은 시각(미래 금지).
+    // 셀. 본인 소유로만 쓰고(뺏기 = update), capturedAt 은 서버 시각, walkedAt 은 클라가 밟은 시각
+    // (기기 시계 오차를 감안해 서버 시각 + 5분까지 허용 — 더 앞서면 거부).
     // 문서 ID 는 H3 res 11 주소(15자: '8b' + 10자 + 'fff'), region 은 그 res 8 부모여야 한다.
     match /cells/{cellId} {
       allow read: if signedIn();
@@ -198,7 +199,7 @@ service cloud.firestore {
         && request.resource.data.region == res8Parent(cellId)
         && request.resource.data.capturedAt == request.time
         && request.resource.data.walkedAt is timestamp
-        && request.resource.data.walkedAt <= request.time;
+        && request.resource.data.walkedAt <= request.time + duration.value(5, 'm');
       allow delete: if false;
     }
   }
