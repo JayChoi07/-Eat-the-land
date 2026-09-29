@@ -13,4 +13,10 @@ data class UserDto(
 interface UserDataSource {
     /** 문서가 없으면 null 을 흘린다. 스냅샷 에러는 예외로 닫는다. */
     fun observe(uid: String): Flow<UserDto?>
+
+    /** `users orderBy cellCount desc limit n` 일회성 읽기. (uid, dto) 순서 유지. 실패는 DataSourceException. */
+    suspend fun topByCellCount(limit: Int): List<Pair<String, UserDto>>
+
+    /** `users where cellCount > than` 의 count 집계(1000문서당 읽기 1). */
+    suspend fun countWithMoreCells(than: Int): Int
 }

@@ -1,5 +1,6 @@
 package com.jaychoi.eattheland.core.testing
 
+import com.jaychoi.eattheland.core.network.DataSourceException
 import com.jaychoi.eattheland.core.network.UserDataSource
 import com.jaychoi.eattheland.core.network.UserDto
 import kotlinx.coroutines.flow.Flow
@@ -25,5 +26,25 @@ class FakeUserDataSource : UserDataSource {
             if (emitBeforeError) emit(users.value[uid])
             throw error
         }
+    }
+
+    var topError: DataSourceException? = null
+    var topCalls = 0
+        private set
+    var countCalls = 0
+        private set
+
+    override suspend fun topByCellCount(limit: Int): List<Pair<String, UserDto>> {
+        topCalls++
+        topError?.let { throw it }
+        return users.value.entries
+            .sortedByDescending { it.value.cellCount ?: 0L }
+            .take(limit)
+            .map { it.key to it.value }
+    }
+
+    override suspend fun countWithMoreCells(than: Int): Int {
+        countCalls++
+        return users.value.values.count { (it.cellCount ?: 0L) > than }
     }
 }

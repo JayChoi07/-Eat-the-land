@@ -6,6 +6,8 @@ import com.jaychoi.eattheland.core.data.PlayerRepository
 import com.jaychoi.eattheland.core.data.TerritoryRepository
 import com.jaychoi.eattheland.core.data.location.DefaultLocationRepository
 import com.jaychoi.eattheland.core.data.location.LocationRepository
+import com.jaychoi.eattheland.core.data.ranking.DefaultRankingRepository
+import com.jaychoi.eattheland.core.data.ranking.RankingRepository
 import com.jaychoi.eattheland.core.data.sync.PendingCaptureScheduler
 import com.jaychoi.eattheland.core.data.sync.WorkManagerPendingCaptureScheduler
 import com.jaychoi.eattheland.core.data.tracking.DefaultTrackingRepository
@@ -29,4 +31,6 @@ interface DataModule {
     @Binds fun bindLocationRepository(impl: DefaultLocationRepository): LocationRepository
 
     @Binds fun bindTrackingRepository(impl: DefaultTrackingRepository): TrackingRepository
+
+    @Binds fun bindRankingRepository(impl: DefaultRankingRepository): RankingRepository
 }
