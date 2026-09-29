@@ -88,10 +88,10 @@
 `TrackingState(isTracking, capturedCount, lastPoint, isGpsWeak, distanceMeters: Double = 0.0, startedAtMillis: Long? = null, lastSummary: WalkSummary? = null)`. `WalkSummary(startedAtMillis, endedAtMillis, cells, meters)`.
 - `TrackingRepository.onWalkStarted(nowMillis)` — 카운트·거리 0, `startedAt = now`, `lastSummary = null`. `onWalkStopped(nowMillis)` — `isTracking=false`, `lastSummary = WalkSummary(startedAt, now, capturedCount, distance)`. `onDistance(meters)` 누적. `onSummaryDismissed()` — `lastSummary = null`.
 - `WalkTracker`: `WalkContext` 에 `lastPassedSample: LocationSample?` 추가 — 판정 결과가 Capture·SameCell·Unconfirmed(게이트 통과)면 `lastPassedSample` 이 있을 때 `distanceMeters(lastPassed.point, sample.point)` 를 `onDistance` 로 더하고 `lastPassedSample = sample`; Mock·Inaccurate·TooFast 면 `lastPassedSample = null`(다음 통과 fix 는 거리를 더하지 않고 기준만 새로 잡음). `Unavailable` 도 `null`. 하버사인은 `:core:domain` `distanceMeters` 를 `public` 으로 열어 `:app` 이 쓴다(`:app` 은 이미 `:core:domain` 의존).
-- 시간: 화면이 `startedAtMillis` 로 1초마다 `now - startedAt` 을 그린다(ViewModel 의 `flow { while(true) { emit(now); delay(1s) } }` 를 추적 중일 때만 combine).
+- 시간: 화면이 `startedAtMillis` 로 1초마다 `now - startedAt` 을 그린다(ViewModel 의 `flow { while(true) { emit(now); delay(1s) } }` 를 추적 중일 때만 combine). `MapViewModel` 은 `Clock` 을 주입받는다.
 
 ### 상단 카드 (레이아웃 정리)
-칩 3줄 → 카드 1장(`surfaceContainer`, 16dp).
+칩 3줄 → 카드 1장(`surfaceContainer`, 16dp). 좌상단 정렬(오른쪽은 아이콘 2개 폭만 비움) — 가운데 띠에 두면 좁은 화면에서 산책 문구가 단어 중간에서 꺾이거나 잘린다. 한 줄 고정, 폭이 모자라면 글자를 10~16sp 사이에서 자동 축소(`TextAutoSize.StepBased`).
 - 평소: `닉네임 · N칸`
 - 산책 중: `12칸 · 1.8 km · 24분` (+ 전송 대기 있으면 ` · 대기 2`). 거리 < 1 km 는 `850 m`, 이상은 소수 1자리 km. 시간은 `분` 단위, 60분 이상 `1시간 3분`.
 - GPS 약함: 카드 아래 얇은 배너 **"GPS 신호가 약해요 · 하늘이 보이는 곳에서 잡혀요"**(기존 `map_gps_weak` 문구 교체). 줌 아웃 안내는 그대로 배너 자리 공유(둘이 동시에 뜨지 않음 — 줌 아웃이면 GPS 배너 숨김).
@@ -100,8 +100,8 @@
 `lastSummary != null && !isTracking` 이면 `ModalBottomSheet`: 제목 "이번 산책", 세 숫자(칸·거리·시간) 크게, [확인]. 닫기(확인·바깥 탭·뒤로) → `MapEvent.SummaryDismissed` → `onSummaryDismissed()`. 저장 없음. 0칸 산책도 시트는 뜬다(거리·시간은 있음).
 
 ### walks 저장
-- `WalkRepository { suspend fun save(summary: WalkSummary) }` in `:core:data` `walk/`, `WalkDataSource.create(uid, WalkDto)` in `:core:network`. 문서 `walks/{uid}/items/{autoId}` — 필드 `startedAt`(timestamp, 클라), `endedAt`(timestamp, 클라), `cells`(int), `meters`(int, 반올림), `createdAt`(서버 시각).
-- 호출: `WalkTracker.run()` 의 `finally` 에서 `onWalkStopped` 뒤 `withContext(NonCancellable) { runCatching { walks.save(summary) } }` — 서비스 취소로 끝나는 경로라 `NonCancellable` 필수. 실패(오프라인·규칙)는 삼킨다(사용자 결정 6, 큐 없음). 0칸·0 m 산책도 저장(이력에 "나갔다 온 날"도 남긴다 — 통계 플랜에서 걸러도 됨).
+- `WalkRepository { suspend fun save(summary: WalkSummary): Boolean }` in `:core:data` `walk/` — 예외를 던지지 않는다. true = 서버가 받았다, false = 로그인 전·오프라인·규칙 거부·시간 초과. 오프라인이면 Firestore 가 쓰기를 보관하고 응답하지 않으므로 5초 뒤 포기한다(보관된 쓰기가 나중에 서버에 닿으면 그 한 건이 늦게 도착할 뿐 — 무해). `WalkDataSource.create(uid, WalkDto)` in `:core:network`. 문서 `walks/{uid}/items/{autoId}` — 필드 `startedAt`(timestamp, 클라), `endedAt`(timestamp, 클라), `cells`(int), `meters`(int, 반올림), `createdAt`(서버 시각).
+- 호출: `:app` `WalkSession(tracking, walks, clock)` 이 시작(`start()` → `onWalkStarted(now)`)과 끝(`finish()` → `onWalkStopped(now)` 뒤 `lastSummary` 가 있으면 `withContext(NonCancellable) { walks.save(summary) }`)을 맡고, `WalkTracker.run()` 은 `session.start()` / `finally { session.finish() }` 만 부른다(`WalkTracker` 생성자 6개 제한 때문에 묶음). 서비스 취소로 끝나는 경로라 `NonCancellable` 필수. 실패(오프라인·규칙)는 삼킨다(사용자 결정 6, 큐 없음). 0칸·0 m 산책도 저장(이력에 "나갔다 온 날"도 남긴다 — 통계 플랜에서 걸러도 됨).
 - 규칙:
 ```
 match /walks/{uid}/items/{walkId} {
@@ -120,10 +120,10 @@ match /walks/{uid}/items/{walkId} {
 
 ## 9. 셀 카드 (탭 정보)
 
-- `KakaoMapView` 에 `onMapClick: (LatLngPoint) -> Unit`(SDK `setOnMapClickListener`). `MapEvent.MapTapped(point)` → ViewModel 이 `grid.cellOf(point)` 로 셀을 구하고 현재 `cells` 목록에서 찾는다. 없으면(중립) 카드 닫힘. 있으면 `selectedCell = SelectedCell(id, ownerUid, walkedAtMillis, isMine)` 저장 후 소유자 닉네임을 `PlayerRepository.nicknameOf(uid)`(신규: `users/{uid}` 1회 `get`, 세션 메모리 캐시, 없으면 null)로 조회.
-- 카드(CTA 위, `surfaceContainer`): **"산책왕 · 3시간 전"**, 내 셀 **"내 땅 · 어제"**, 소유자 문서 없음 **"떠난 사람 · 3일 전"**. 상대 시간: 1분 미만 "방금", 분·시간·일, 7일 이상은 날짜. 기준은 `Cell.walkedAtMillis`(신규 — `CellDto.walkedAt` 을 도메인으로 옮김, 없으면 `capturedAtMillis`).
-- 닫힘: 다른 곳 탭(중립·같은 셀 재탭), 5초 뒤 자동(`LaunchedEffect(selectedCell)` + delay), 산책 시작/종료 시.
-- `Cell` 에 `walkedAtMillis: Long` 추가 → `CellDtoTest`·fake 갱신.
+- `KakaoMapView` 에 `onMapClick: (LatLngPoint) -> Unit`(SDK `setOnMapClickListener`). `MapEvent.MapTapped(point)` → ViewModel 이 `grid.cellOf(point)` 로 셀을 구하고 현재 `cells` 목록에서 찾는다. 없으면(중립) 카드 닫힘. 있으면 `selectedCell = SelectedCell(id, owner: CellOwner, time: RelativeTime)` 저장 — `owner` 는 내 셀이면 `Me`, 아니면 `Loading` 으로 두고 `PlayerRepository.nicknameOf(uid)`(신규: `UserDataSource.get(uid)` 로 `users/{uid}` 1회 읽기, `DefaultPlayerRepository` 를 `@Singleton` 으로 두고 세션 메모리 캐시 — 문서 없음(null)도 캐시, 읽기 오류는 null 이되 캐시 안 함)로 조회해 `Named(nickname)` 또는 `Gone` 으로 바꾼다. `time` 은 탭한 순간 `relativeTime(now, walkedAtMillis)` 로 계산해 둔다(카드는 5초만 산다).
+- 카드(CTA 위, `surfaceContainer`): **"산책왕 · 3시간 전"**, 내 셀 **"내 땅 · 어제"**, 소유자 문서 없음 **"떠난 사람 · 3일 전"**. 상대 시간(`RelativeTime`): 1분 미만 "방금", 분·시간, 1일 "어제", 2~6일 "N일 전", 7일 이상은 날짜("M월 d일"); 미래 시각(기기 시계 오차)은 "방금". 기준은 `Cell.walkedAtMillis`(신규 — `CellDto.walkedAt` 을 도메인으로 옮김, 기본값 `capturedAtMillis`).
+- 닫힘: 다른 곳 탭(중립·같은 셀 재탭), 5초 뒤 자동(ViewModel 타이머), 산책 시작/종료 시(선택 당시의 `isTracking` 과 지금이 다르면 숨김), 명시적 `CellCardDismissed`.
+- `Cell` 에 `walkedAtMillis: Long = capturedAtMillis` 추가 → `CellDtoTest` 갱신. `FakeCellDataSource` 는 `walkedAt` 을 쓰지 않는다(`:core:testing` 에 Firebase 타입이 없고 읽는 테스트도 없음).
 
 ---
 
@@ -139,8 +139,8 @@ match /walks/{uid}/items/{walkId} {
 | `:core:model` | `Ranking*`, `WalkSummary`, `Cell.walkedAtMillis`, `TrackingState` 확장 |
 | `:core:common` | `intent/AppSettings.kt`(설정 열기 인텐트) |
 | `:core:domain` | `distanceMeters` public |
-| `:app` | 키 3개 등록, 두 번 뒤로가기, 아이콘·스플래시, `versionName` 전달, `WalkTracker` 거리·walks |
-| `:core:testing` | `FakeRankingRepository`, `FakeWalkRepository`, `FakeUserDataSource` 확장 |
+| `:app` | 키 3개 등록, 두 번 뒤로가기, 아이콘·스플래시, `versionName` 전달, `WalkTracker` 거리, `WalkSession`(시작·종료·walks 저장) |
+| `:core:testing` | `FakeRankingRepository`, `FakeWalkDataSource`, `FakeWalkRepository`, `FakeUserDataSource`·`FakePlayerRepository`·`FakeTrackingRepository` 확장 |
 | `firestore.rules` | `walks` 블록 |
 
 카탈로그 추가 후보: `androidx.compose.material3` `PullToRefreshBox` 는 BOM 안(추가 없음). 아이콘이 `material-icons-core` 에 없으면 벡터 2개 직접(라이브러리 추가 없음).
@@ -151,7 +151,7 @@ match /walks/{uid}/items/{walkId} {
 |---|---|
 | 단위 | `RankingRepository`(목록 안 순위·밖 count·0칸·동점·캐시·force), `DefaultPlayerRepository.deleteAccount`(성공·배치 실패·`delete()` 실패 시 로그아웃 진행)·`nicknameOf` 캐시, `SettingsViewModel`(닉네임 편집·저장·에러, 삭제 확인·진행·완료), `RankingViewModel`(로드·새로고침·실패 시 캐시 유지), `WalkTracker`(거리: 통과-통과 더함·비통과 끼면 기준 리셋·Unavailable 리셋, 종료 시 walks 저장·실패 무시·취소 경로), `DefaultTrackingRepository`(요약 생성·닫기), `MapViewModel`(시트 표시/닫기, 셀 탭 → 카드·중립 닫힘·닉네임 조회, GPS 배너와 줌 아웃 배타), 뒤로가기 2초 로직(`:app` 순수 함수 `DoubleBackGate` 로 분리해 테스트) |
 | 규칙 | `walks` 4건(본인 create 통과, 타인·필드 여분·endedAt<startedAt·update 거부), 삭제 짝 규칙은 기존 |
-| 스크린샷 | 설정(기본·닉네임 편집·삭제 확인), 라이선스, 랭킹(목록·빈·실패 배너), 지도(산책 중 카드·GPS 배너·결과 시트·셀 카드) |
+| 스크린샷 | 설정(기본·닉네임 편집·삭제 확인), 라이선스, 랭킹(목록·빈·실패 배너), 지도(산책 중 카드·GPS 배너·결과 시트·셀 카드). 결과 시트는 `ModalBottomSheet` 가 별도 창이라 `captureScreenRoboImage()` 로 화면 전체를 찍는다 |
 | 수동(실기기) | 뒤로가기 2번·산책 중 문구, 랭킹 표시·새로고침, 닉네임 변경, 계정 삭제 → 온보딩 → 새 닉네임, 산책 거리·시간·시트, walks 문서, 셀 탭 카드, 아이콘·스플래시 |
 
 ## 12. 리스크
