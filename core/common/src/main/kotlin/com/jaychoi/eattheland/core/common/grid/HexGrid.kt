@@ -5,7 +5,7 @@ import com.jaychoi.eattheland.core.model.LatLngPoint
 
 /**
  * 육각 격자 계산 경계. 구현은 H3(네이티브)이라 JVM 단위 테스트에서는 FakeHexGrid(:core:testing)로 갈아끼운다.
- * 스펙 §2: 셀 해상도 11(폭 ≈ 50 m), 뷰포트 조회 키는 해상도 7.
+ * 스펙 §2: 셀 해상도 11(폭 ≈ 50 m), 뷰포트 조회 키는 해상도 8(한 칸 ≈ 0.74 km², 셀 343개 — v3).
  */
 interface HexGrid {
     fun cellOf(point: LatLngPoint, res: Int = CELL_RES): CellId
@@ -22,6 +22,6 @@ interface HexGrid {
 
     companion object {
         const val CELL_RES = 11
-        const val REGION_RES = 7
+        const val REGION_RES = 8
     }
 }

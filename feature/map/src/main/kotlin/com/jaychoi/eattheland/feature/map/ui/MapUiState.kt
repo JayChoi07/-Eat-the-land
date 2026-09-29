@@ -4,8 +4,11 @@ import com.jaychoi.eattheland.core.model.CellId
 import com.jaychoi.eattheland.core.model.LatLngPoint
 import com.jaychoi.eattheland.core.model.Player
 
-/** 이 줌 미만에서는 셀 리스너를 걸지 않고 안내 문구를 띄운다(Firestore read 절약). 실기기에서 카카오 줌 스케일 확인(2026-09-29). */
-const val MIN_OVERLAY_ZOOM = 14f
+/**
+ * 이 줌 미만에서는 셀 리스너를 걸지 않고 안내 문구를 띄운다(Firestore read 절약).
+ * region res 8 리스너 7개(≈ 2.6 km 폭)가 화면을 덮는 최소 줌 — 실기기 확인(2026-09-29).
+ */
+const val MIN_OVERLAY_ZOOM = 15f
 
 data class CellPolygon(
     val id: CellId,

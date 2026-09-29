@@ -65,10 +65,10 @@ class MapViewModelTest {
     }
 
     @Test
-    fun `줌 14 미만이면 구독하지 않고 isZoomedOut`() = runTest {
+    fun `줌 15 미만이면 구독하지 않고 isZoomedOut`() = runTest {
         val vm = viewModel()
         vm.uiState.test {
-            vm.onEvent(MapEvent.CameraIdle(seoul, zoom = 13.9f, byUser = false))
+            vm.onEvent(MapEvent.CameraIdle(seoul, zoom = 14.9f, byUser = false))
             val state = awaitItemUntil { it.isZoomedOut }
             assertTrue(state.cells.isEmpty())
             assertTrue(territory.requestedRegions.isEmpty())
@@ -77,10 +77,10 @@ class MapViewModelTest {
     }
 
     @Test
-    fun `줌이 정확히 14 면 구독한다`() = runTest {
+    fun `줌이 정확히 15 면 구독한다`() = runTest {
         val vm = viewModel()
         vm.uiState.test {
-            vm.onEvent(MapEvent.CameraIdle(seoul, zoom = 14f, byUser = false))
+            vm.onEvent(MapEvent.CameraIdle(seoul, zoom = 15f, byUser = false))
             cancelAndIgnoreRemainingEvents()
         }
         assertEquals(1, territory.requestedRegions.size)
