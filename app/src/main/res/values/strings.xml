@@ -1,4 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">땅따먹기</string>
+    <string name="tracking_channel_name">산책 추적</string>
+    <string name="tracking_notification_title">산책 중</string>
+    <string name="tracking_notification_text">이번 산책 %1$d칸</string>
+    <string name="tracking_notification_stop">종료</string>
 </resources>

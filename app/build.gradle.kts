@@ -77,6 +77,8 @@ dependencies {
     implementation(projects.core.designsystem)
     implementation(projects.core.model)
     implementation(projects.core.data)
+    implementation(projects.core.common)
+    implementation(projects.core.domain)
     implementation(projects.feature.onboarding)
     implementation(projects.feature.map)
     implementation(libs.androidx.lifecycle.runtime.compose)
@@ -94,6 +96,8 @@ dependencies {
     implementation(libs.androidx.navigation3.ui)
     // rememberViewModelStoreNavEntryDecorator (R-13-05)
     implementation(libs.androidx.lifecycle.viewmodel.navigation3)
+    // LocationTrackingService 의 lifecycleScope (플랜 B)
+    implementation(libs.androidx.lifecycle.service)
 
     // Firebase 초기화만 :app 이 한다(App Startup Initializer). Auth·Firestore 사용은 :core:network 에.
     implementation(platform(libs.firebase.bom))

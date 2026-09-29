@@ -8,11 +8,13 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
-    <!-- 온보딩에서 요청하는 런타임 권한 (스펙 §3). FGS 권한은 위치 추적을 붙이는 플랜 B 에서 추가한다.
-         ACCESS_BACKGROUND_LOCATION 은 선언하지 않는다. -->
+    <!-- 온보딩에서 요청하는 런타임 권한 (스펙 §3). ACCESS_BACKGROUND_LOCATION 은 선언하지 않는다. -->
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- 위치 FGS (스펙 §3, 플랜 B) -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
 
     <application
         android:name=".EatTheLandApplication"
@@ -30,6 +32,12 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!-- 산책 추적 FGS. 시작/종료는 LocationTrackingService.start/stop 으로만 한다. -->
+        <service
+            android:name=".tracking.LocationTrackingService"
+            android:exported="false"
+            android:foregroundServiceType="location" />
 
         <!-- Firebase 자동 초기화 프로바이더를 끄고 App Startup 으로 합친다 (R-18-02) -->
         <provider
