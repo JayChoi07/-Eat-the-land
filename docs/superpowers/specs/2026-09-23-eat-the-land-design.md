@@ -1,6 +1,6 @@
 # 땅따먹기 (Eat the Land) — v1.0 설계 스펙
 
-작성일: 2026-09-23 · v2 (2026-09-23 오후: 카드 없는 무료 운영으로 지도·백엔드 변경) · 상태: 확정
+작성일: 2026-09-23 · v2 (2026-09-23 오후: 카드 없는 무료 운영으로 지도·백엔드 변경) · v3 (2026-09-29 오후: 플랜 B 뒤 토대 재검토 — 아래 "v3 변경") · 상태: 확정
 
 ## 1. 개요
 
@@ -25,19 +25,33 @@
 - 글로벌 지도(카카오맵은 한국 전용 — 확장 시 `:feature:map` 안에서 SDK 교체)
 - 걸음 센서 배터리 절약, 위젯, iOS
 
+### v3 변경 (2026-09-29 오후, 플랜 B-2 "토대 보정")
+
+플랜 B 실기기 검증 뒤 브레인스토밍에서 사용자가 정한 방향: **재미의 축은 "걷기 동기부여"(A)** — 오늘 걸으면 오늘 색이 늘어나는 것이 핵심, 뺏기는 양념. 따라서 즉시 뺏기·점수=보유 셀은 유지하고, "안 걸었는데 칠해짐"과 "걸었는데 안 칠해짐"만 줄인다.
+
+| # | 결정 | 이유 |
+|---|---|---|
+| 1 | 캡처는 **같은 새 셀에서 fix 2번 연속**일 때 | 셀 폭 50 m ≈ 정확도 게이트 50 m 라 도심에서 서 있어도 옆 셀이 캡처되던 것. 정확도 게이트를 조이면 빌딩 사이에서 걷는데도 안 칠해져 A 와 충돌 → 2연속으로 단발 튐만 거른다(캡처 지연 ≤ 5초) |
+| 2 | 속도 측정값이 없으면 **직전 fix 와의 거리/시간으로 계산** | 신호등에 선 버스·정체 차량에서 `speed == null` 이 통과되던 것. 첫 fix(직전 없음)는 통과 |
+| 3 | 자전거·차량 구간 **선분 보간 없음** | 걷기 앱이니 빨리 가면 덜 칠해지는 것이 맞다 |
+| 4 | 셀 문서에 **`walkedAt`(클라 시각)** 추가, `capturedAt`(서버 시각)은 유지 | 오프라인 큐가 늦게 보내면 "업로드 시각"만 남아 v1.1 부패·방어력의 기준 시각이 오염된다. 지금 안 쌓으면 못 되살린다 |
+| 5 | region 을 **res 7 → res 8** | res 7 한 칸에 res 11 셀 2,401개 → 리스너 7개면 지도 한 번에 최대 1만 7천 읽기(Spark 5만/일). res 8 은 343개 → 최대 2,400 읽기. 지금 셀이 1개라 바꾸는 비용이 가장 쌀 때 |
+| — | 유지 | 육각형·res 11·즉시 뺏기·점수=보유 셀·오프라인 24시간/300칸·클라 판정 |
+
 ## 2. 게임 규칙
 
 | 규칙 | 값 |
 |---|---|
-| 캡처 | 셀에 들어오는 즉시 내 것. 남의 셀도 즉시 뺏김 |
-| 걷기 판정 | 속도 ≤ 20 km/h ∧ GPS 정확도 ≤ 50 m ∧ mock location 아님. **클라이언트가 판정**(서버 없음). 보안 규칙은 "본인 uid·서버 시각"만 검증 |
+| 캡처 | 새 셀에서 걷기 판정을 통과한 fix 가 **2번 연속**이면 내 것(v3). 남의 셀도 즉시 뺏김 |
+| 걷기 판정 | 속도 ≤ 20 km/h ∧ GPS 정확도 ≤ 50 m ∧ mock location 아님. 속도는 제공자 값, 없으면 직전 fix 와의 거리/시간(v3, 첫 fix 는 통과). **클라이언트가 판정**(서버 없음). 보안 규칙은 "본인 uid·서버 시각·walkedAt ≤ 서버 시각"만 검증 |
+| 이동 구간 | fix 사이 선분은 채우지 않는다 — 빨리 지나가면 덜 칠해진다(v3) |
 | 점수 | 현재 보유 셀 수 (`users.cellCount`, 캡처하는 클라가 ±1 트랜잭션) |
 | 랭킹 | 전체 누적 상위 100 + 내 순위 |
 
 ### 격자
 - **H3 해상도 11** (한 변 ≈ 25 m, 폭 ≈ 50 m). 30분 산책(2.5 km) ≈ 50셀
 - 클라 `com.uber:h3-android:4.5.0`. AAR은 **armeabi-v7a·arm64-v8a만** 포함 → x86 에뮬레이터에서는 지도·캡처 불가, 실기기로 검증. H3 로드는 첫 사용 시점까지 lazy
-- 뷰포트 조회 키는 상위 셀 **해상도 7** (`region` 필드)
+- 뷰포트 조회 키는 상위 셀 **해상도 8** (`region` 필드, 한 칸 ≈ 0.74 km²·res 11 셀 343개. v2 는 res 7 이었음 — v3 변경 5)
 
 ## 3. 아키텍처
 
@@ -78,7 +92,7 @@ android-standards 팩 그린필드 규칙 적용 (멀티모듈·Nav3 1.1.7·Hilt
 
 ### UseCase (`:core:domain`)
 - `ValidateNicknameUseCase(nickname): Boolean` — `^[가-힣a-zA-Z0-9]{2,12}$`, 온보딩·설정 공유 (R-16-07)
-- `CaptureCellUseCase(sample, currentCell, lastCell): CaptureDecision` — mock → 정확도 ≤ 50 m → 속도 ≤ 20 km/h(미상이면 통과) → 같은 셀 반복 컷 순. 셀 계산은 H3(Android 라이브러리)라 순수 JVM 모듈에서 못 하므로 호출자가 넘긴다
+- `CaptureCellUseCase(sample, currentCell, context: WalkContext): CaptureDecision` (v3) — `WalkContext(lastSample: LocationSample?, lastCell: CellId?, candidateCell: CellId?)`. 순서: mock → 정확도 ≤ 50 m → 속도 ≤ 20 km/h(제공자 값, 없으면 `lastSample` 과의 하버사인 거리/시간, 둘 다 없으면 통과) → `currentCell == lastCell` 이면 `SameCell` → `currentCell == candidateCell` 이면 **Capture** → 그 외 `Skip(Unconfirmed)`. 셀 계산은 H3(Android 라이브러리)라 순수 JVM 모듈에서 못 하므로 호출자가 넘긴다. 호출자(`WalkTracker`)는 매 fix 뒤 `lastSample` 을 갱신하고, `Unconfirmed` 면 `candidateCell = currentCell`, 캡처 결과(Captured·AlreadyMine·Queued·AlreadyQueued) 뒤 `lastCell = currentCell`·`candidateCell = null`, `Failed` 면 `lastCell` 유지·`candidateCell` 은 그대로(다음 fix 에서 다시 캡처 시도)
 
 ### 상태 아키텍처
 R-12-02 매트릭스 — Map 화면 "상태별 허용 이벤트 다름"(Idle↔Tracking) 1개 → **MVVM-UDF**. 나머지 0개 → MVVM-UDF.
@@ -103,7 +117,7 @@ Cloud Functions 없음. 모든 쓰기는 클라이언트가 하고 **보안 규�
 |---|---|---|---|
 | `users` | uid | `nickname`(2~12자 규칙 매치), `nicknameLower`(== nickname.lower()), `color`(0..6 int), `cellCount`(int), `createdAt`(request.time) | read 전체. create/update/delete 본인. create 시 `cellCount == 0`. 프로필 update 는 nickname·nicknameLower 만 변경. **닉네임은 같은 트랜잭션이 끝난 뒤 `nicknames/{lower}` 예약의 주인이 본인이어야 한다**(프로필만 직접 써서 유일성 우회 금지). delete 는 예약도 함께 지울 때만. `cellCount` update 는 누구나 정확히 ±1 만 (캡처 트랜잭션용) |
 | `nicknames` | nicknameLower | `uid` | read 전체. **create 만** 본인 uid 로(이미 있으면 update 라서 거부 → 유일성 보장), 본인 프로필이 그 닉네임을 쓸 때만(선점 금지). delete 는 본인이 그 닉네임을 더 쓰지 않을 때만. update 금지 |
-| `cells` | H3 res11 | `ownerUid`(== auth.uid), `ownerColor`(0..6 int), `capturedAt`(== request.time), `region`(그 셀의 res 7 부모) | read 전체. create/update 본인 소유로만(뺏기 = update). 문서 ID 는 H3 res 11 형식(`8b` + 10자 + `fff`)만. delete 금지. 클라는 받은 문서도 `HexGrid.isValidCell` 로 다시 거른다 |
+| `cells` | H3 res11 | `ownerUid`(== auth.uid), `ownerColor`(0..6 int), `capturedAt`(== request.time), `walkedAt`(timestamp, 클라가 밟은 시각, ≤ request.time — v3), `region`(그 셀의 res 8 부모 — v3) | read 전체. create/update 본인 소유로만(뺏기 = update). 문서 ID 는 H3 res 11 형식(`8b` + 10자 + `fff`)만. delete 금지. 클라는 받은 문서도 `HexGrid.isValidCell` 로 다시 거른다 |
 
 색 배정: 클라가 `uid.hashCode() mod 7` (서버 카운터 없음).
 
@@ -161,20 +175,30 @@ service cloud.firestore {
         && !usedBy(lower, request.auth.uid);
     }
 
-    // 셀. 본인 소유로만 쓰고(뺏기 = update), 시각은 서버 시각만.
-    // 문서 ID 는 H3 res 11 주소(15자: '8b' + 10자 + 'fff'), region 은 그 res 7 부모여야 한다.
-    // H3 주소에서 앞 9자 중 2~8번째(기준 셀 + 1~7번 자리)는 부모와 같다.
+    // res 11 셀 주소의 res 8 부모. H3 주소는 3비트 자리를 16진수로 찍어 res 8 경계(42비트)가
+    // 10번째 문자 중간에 걸린다 — 앞 9자는 같고, 10번째 문자는 최하위 비트만 1로 채우고, 나머지는 'f'.
+    // (h3-js cellToParent 와 한국 좌표 2만 점 대조, 2026-09-29)
+    function res8Parent(cellId) {
+      let odd = {'0':'1','1':'1','2':'3','3':'3','4':'5','5':'5','6':'7','7':'7',
+                 '8':'9','9':'9','a':'b','b':'b','c':'d','d':'d','e':'f','f':'f'};
+      return '88' + cellId[2:9] + odd[cellId[9]] + 'fffff';
+    }
+
+    // 셀. 본인 소유로만 쓰고(뺏기 = update), capturedAt 은 서버 시각, walkedAt 은 클라가 밟은 시각(미래 금지).
+    // 문서 ID 는 H3 res 11 주소(15자: '8b' + 10자 + 'fff'), region 은 그 res 8 부모여야 한다.
     match /cells/{cellId} {
       allow read: if signedIn();
       allow create, update: if signedIn()
         && cellId.matches('^8b[0-9a-f]{10}fff$')
-        && request.resource.data.keys().hasOnly(['ownerUid','ownerColor','capturedAt','region'])
+        && request.resource.data.keys().hasOnly(['ownerUid','ownerColor','capturedAt','walkedAt','region'])
         && request.resource.data.ownerUid == request.auth.uid
         && request.resource.data.ownerColor is int
         && request.resource.data.ownerColor >= 0 && request.resource.data.ownerColor < 7
         && request.resource.data.region is string
-        && request.resource.data.region == '87' + cellId[2:9] + 'ffffff'
-        && request.resource.data.capturedAt == request.time;
+        && request.resource.data.region == res8Parent(cellId)
+        && request.resource.data.capturedAt == request.time
+        && request.resource.data.walkedAt is timestamp
+        && request.resource.data.walkedAt <= request.time;
       allow delete: if false;
     }
   }
@@ -183,7 +207,7 @@ service cloud.firestore {
 
 ### 클라 트랜잭션
 - **setNickname(nickname)**: 트랜잭션 — `nicknames/{lower}` 읽기(있고 uid≠나 → `NicknameTaken`), `users/{uid}` 읽기 → 있으면 옛 `nicknames/{old}` 삭제 + users 갱신, 없으면 users 생성(색 배정) → `nicknames/{lower}` 생성(이미 내 예약이면 생략 — 같은 닉네임 재제출은 성공). 경합으로 규칙에 걸리면 `PERMISSION_DENIED` → `NicknameTaken`으로 매핑
-- **capture**: 트랜잭션 — `cells/{id}` 읽기 → 이미 내 셀이면 쓰지 않음(AlreadyMine) → 나·이전 소유자 프로필 읽기 → cells set, 나 `cellCount +1`, 이전 소유자 `-1`(프로필이 없거나 0이면 생략 — 규칙이 음수를 거부). 색은 프로필과 같은 `uid.hashCode() mod 7`
+- **capture(cellId, region, uid, color, walkedAtMillis)**: 트랜잭션 — `cells/{id}` 읽기 → 이미 내 셀이면 쓰지 않음(AlreadyMine) → 나·이전 소유자 프로필 읽기 → cells set(`capturedAt` = serverTimestamp, `walkedAt` = `Timestamp(walkedAtMillis)`), 나 `cellCount +1`, 이전 소유자 `-1`(프로필이 없거나 0이면 생략 — 규칙이 음수를 거부). 색은 프로필과 같은 `uid.hashCode() mod 7`. `walkedAtMillis` 는 온라인 경로에서 `Clock.nowMillis()`, 큐 재전송에서 `PendingCell.queuedAtMillis`(v3)
 - **deleteAccount** (플랜 C): `users/{uid}`·`nicknames/{lower}` 를 **한 배치로** 삭제(규칙이 짝을 강제) → `FirebaseUser.delete()`. 셀은 남고(소유자 문서 없음) 뺏을 수 있음
 
 ### 알려진 한계 (카드 등록 후 Functions로 승격)
@@ -192,7 +216,11 @@ service cloud.firestore {
 - 셀 부패 배치 없음 (v1.1)
 
 ### 뷰포트 조회
-`cells where region in [중심 res7 + 이웃 6]` 실시간 리스너 (`in` 7개 ≤ 30). 줌 임계 미만이면 리스너 해제.
+`cells where region in [중심 res8 + 이웃 6]` 실시간 리스너 (`in` 7개 ≤ 30, 보이는 범위 ≈ 2.6 km 폭). 줌 임계 미만이면 리스너 해제. 지도 한 번 열 때 최대 읽기 = 7 × 343 = 2,401 (v3, res 7 일 때 16,807).
+
+### 개발 스크립트 (`rules/`, 서비스 계정 키는 커밋 금지)
+- `npm run seed -- <lat> <lng>`: 좌표 주변에 남의 셀 3개(region res 8, walkedAt 포함)
+- `npm run reset`: `cells` 전부 삭제 + 모든 `users.cellCount = 0` (v3, region 해상도 변경 뒤 옛 문서 정리용)
 
 ## 5. 화면 · 네비게이션
 
@@ -243,11 +271,12 @@ service cloud.firestore {
 
 | 층 | 대상 | 도구 |
 |---|---|---|
-| 단위 | UseCase 2개, Repository(fake 데이터소스)·PendingCaptureQueue·DataStore 데이터소스·Location 매핑(Robolectric), WalkTracker, ViewModel 4개, DTO 매핑 | JUnit4, coroutines-test, turbine, Robolectric |
+| 단위 | UseCase 2개(캡처는 속도 폴백·2연속 포함), Repository(fake 데이터소스)·PendingCaptureQueue·DataStore 데이터소스·Location 매핑(Robolectric), WalkTracker(후보→캡처·후보 교체), ViewModel 4개, DTO 매핑(walkedAt) | JUnit4, coroutines-test, turbine, Robolectric |
+| 격자 | `H3HexGrid` 의 res 8 부모는 H3 네이티브가 ARM 전용이라 JVM 테스트 불가 — 규칙 테스트가 h3-js `cellToParent(…, 8)` 로 같은 값을 고정하고, 실기기에서 캡처된 문서의 `region` 이 규칙을 통과하는 것으로 확인 | Jest + 수동 |
 | 아키텍처 | 팩 Konsist | Konsist |
 | 스크린샷 | 화면마다 골든 (`@Config(sdk=[35])`), 지도는 슬롯으로 비움 | Roborazzi |
 | 서버 | **보안 규칙** — users/nicknames/cells 허용·거부 케이스 | `@firebase/rules-unit-testing` + Firestore 에뮬레이터 + Jest |
-| 수동 | 실기기 1대: 온보딩·지도 오버레이·(B) 산책 캡처·시드 셀 뺏기·오프라인 큐(비행기 모드)·화면 꺼짐 추적 | — |
+| 수동 | 실기기 1대: 온보딩·지도 오버레이·(B) 산책 캡처·시드 셀 뺏기·오프라인 큐(비행기 모드)·화면 꺼짐 추적·(B-2) 제자리 2분 서서 셀 수 불변, 걸어서 캡처 지연 ≤ 5초, 문서에 `walkedAt`·`88…` region | — |
 
 ## 9. CI/CD
 
@@ -259,6 +288,7 @@ service cloud.firestore {
 
 - **플랜 A**: 스캐폴딩 → 모델·HexGrid → Firebase 연결 → 보안 규칙+테스트 → network/data/domain → 온보딩 → 앱 루트 → 카카오맵 영토 보기
 - **플랜 B**: 위치 추적 FGS + CaptureCellUseCase + capture 트랜잭션 + 오프라인 큐
+- **플랜 B-2** (v3 토대 보정): 2연속 캡처·속도 폴백 → `walkedAt` → region res 8 + 규칙·시드·reset → 실기기 확인
 - **플랜 C**: 랭킹·설정·계정 삭제·CI 규칙 잡·내부 테스트 배포
 
 ## 11. 리스크
@@ -266,10 +296,10 @@ service cloud.firestore {
 | 리스크 | 대응 |
 |---|---|
 | 카카오맵 무료 쿼터·첫 앱 조건 | 이 앱만 활성화. 쿼터 초과 시 유료 전환 or MapLibre 교체 |
-| Firestore 읽기 5만/일 | region 리스너 7개 고정, 줌 임계 이하 해제. 초과 시 캐시 TTL(v1.1) |
+| Firestore 읽기 5만/일 | region res 8·리스너 7개 고정(지도 한 번 ≤ 2,401 읽기), 줌 임계 이하 해제. 초과 시 뷰포트에 걸리는 region 만 구독(v1.1) |
 | 치팅 (클라 판정) | 취미 출시 수용. 카드 등록 후 Functions 승격 |
 | h3-android x86 미지원 | 실기기 검증 |
-| GPS 오차 오캡처 | 50 m 게이트, 필요 시 30 m |
+| GPS 오차 오캡처 | 50 m 게이트 + 같은 새 셀 2연속(v3). 그래도 정지 상태에서 늘면 30 m |
 | 익명 계정 소실 | 온보딩 안내 + v1.1 Google 연동 |
 | 카카오맵 Compose 미지원 | `AndroidView` + 라이프사이클 옵저버(resume/pause/finish) |
 
