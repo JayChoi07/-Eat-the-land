@@ -28,11 +28,11 @@ class CaptureCellUseCase @Inject constructor() {
         else -> CaptureDecision.Skip(SkipReason.Unconfirmed)
     }
 
-    // 직전 fix 가 없거나 시간이 흐르지 않았으면 알 수 없음 → 0(통과).
+    // 직전 fix 가 없거나 시간이 흐르지 않았으면(같은 측정의 중복) 알 수 없음 → 0(통과). 시각은 단조 시계라 역행하지 않는다.
     // speedMps 는 다른 모듈의 프로퍼티라 스마트캐스트가 안 된다 — 지역 변수로 받는다.
     private fun speedOf(sample: LocationSample, last: LocationSample?): Float {
         val measured = sample.speedMps
-        val seconds = last?.let { (sample.timeMillis - it.timeMillis) / MILLIS_PER_SECOND } ?: 0.0
+        val seconds = last?.let { (sample.elapsedMillis - it.elapsedMillis) / MILLIS_PER_SECOND } ?: 0.0
         return when {
             measured != null -> measured
             last == null || seconds <= 0.0 -> 0f

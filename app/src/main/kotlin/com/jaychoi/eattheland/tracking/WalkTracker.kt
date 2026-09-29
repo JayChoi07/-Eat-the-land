@@ -46,9 +46,10 @@ class WalkTracker @Inject constructor(
         update: LocationUpdate,
         context: WalkContext,
     ): WalkContext = when (update) {
+        // 관측이 끊겼다 — 후보와 속도 기준 fix 는 버리고(복구 뒤 한 번의 fix 로 칠하지 않게) 마지막 셀만 남긴다.
         LocationUpdate.Unavailable -> {
             tracking.onLocation(point = null, isGpsWeak = true)
-            context
+            context.copy(lastSample = null, candidateCell = null)
         }
 
         is LocationUpdate.Fix -> handleFix(update.sample, context)

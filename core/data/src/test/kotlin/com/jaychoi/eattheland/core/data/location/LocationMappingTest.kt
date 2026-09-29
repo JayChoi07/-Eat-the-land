@@ -17,17 +17,18 @@ class LocationMappingTest {
         longitude = 126.9780
         accuracy = 12f
         time = 1_000L
+        elapsedRealtimeNanos = 7_000_000_000L
         if (speed != null) this.speed = speed
         isMock = mock
     }
 
     @Test
-    fun `위도·경도·정확도·속도·시각·mock 을 옮긴다`() {
+    fun `위도·경도·정확도·속도·mock 을 옮기고, 시각은 벽시계가 아니라 부팅 후 경과 시간(ms)`() {
         val sample = location(mock = true).toSample()
         assertEquals(LatLngPoint(37.5665, 126.9780), sample.point)
         assertEquals(12f, sample.accuracyMeters)
         assertEquals(1.5f, sample.speedMps)
-        assertEquals(1_000L, sample.timeMillis)
+        assertEquals(7_000L, sample.elapsedMillis)
         assertEquals(true, sample.isMock)
     }
 

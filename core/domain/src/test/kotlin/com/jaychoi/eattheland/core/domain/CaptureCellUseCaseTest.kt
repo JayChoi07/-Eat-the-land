@@ -25,7 +25,7 @@ class CaptureCellUseCaseTest {
         speed: Float? = 1.2f,
         time: Long = 1_000L,
         mock: Boolean = false,
-    ) = LocationSample(point, accuracy, speed, timeMillis = time, isMock = mock)
+    ) = LocationSample(point, accuracy, speed, elapsedMillis = time, isMock = mock)
 
     private val fresh = WalkContext()
     private val candidateHere = WalkContext(candidateCell = here)

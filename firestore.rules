@@ -59,7 +59,8 @@ service cloud.firestore {
       return '88' + cellId[2:9] + odd[cellId[9]] + 'fffff';
     }
 
-    // 셀. 본인 소유로만 쓰고(뺏기 = update), capturedAt 은 서버 시각, walkedAt 은 클라가 밟은 시각(미래 금지).
+    // 셀. 본인 소유로만 쓰고(뺏기 = update), capturedAt 은 서버 시각, walkedAt 은 클라가 밟은 시각
+    // (기기 시계 오차를 감안해 서버 시각 + 5분까지 허용 — 더 앞서면 거부).
     // 문서 ID 는 H3 res 11 주소(15자: '8b' + 10자 + 'fff'), region 은 그 res 8 부모여야 한다.
     match /cells/{cellId} {
       allow read: if signedIn();
@@ -73,7 +74,7 @@ service cloud.firestore {
         && request.resource.data.region == res8Parent(cellId)
         && request.resource.data.capturedAt == request.time
         && request.resource.data.walkedAt is timestamp
-        && request.resource.data.walkedAt <= request.time;
+        && request.resource.data.walkedAt <= request.time + duration.value(5, 'm');
       allow delete: if false;
     }
   }

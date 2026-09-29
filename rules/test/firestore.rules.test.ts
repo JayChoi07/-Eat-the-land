@@ -186,12 +186,15 @@ describe('cells', () => {
     await assertFails(setDoc(doc(alice(), `cells/${CELL}`), cell('alice', { ownerColor: -1 })));
     await assertFails(setDoc(doc(alice(), `cells/${CELL}`), cell('alice', { ownerColor: '2' })));
   });
-  test('walkedAt 은 필수 timestamp 이고 미래 시각은 거부, 과거는 통과', async () => {
+  test('walkedAt 은 필수 timestamp, 5분 넘는 미래는 거부, 기기 시계 오차(1분 앞)·과거는 통과', async () => {
     const withoutWalkedAt: Record<string, unknown> = { ...cell('alice') };
     delete withoutWalkedAt.walkedAt;
     await assertFails(setDoc(doc(alice(), `cells/${CELL}`), withoutWalkedAt));
     await assertFails(setDoc(doc(alice(), `cells/${CELL}`), cell('alice', { walkedAt: 1_700_000_000 })));
     await assertFails(setDoc(doc(alice(), `cells/${CELL}`), cell('alice', {
+      walkedAt: Timestamp.fromMillis(Date.now() + 10 * 60_000),
+    })));
+    await assertSucceeds(setDoc(doc(alice(), `cells/${CELL}`), cell('alice', {
       walkedAt: Timestamp.fromMillis(Date.now() + 60_000),
     })));
     await assertSucceeds(setDoc(doc(alice(), `cells/${CELL}`), cell('alice', {

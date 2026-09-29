@@ -33,7 +33,7 @@ class WalkTrackerTest {
     private val b = LatLngPoint(37.5679, 126.9780) // a 에서 북쪽 약 200 m, 다른 셀
 
     private fun fix(p: LatLngPoint, accuracy: Float = 10f, speed: Float? = 1.2f, time: Long = 0L) =
-        LocationUpdate.Fix(LocationSample(p, accuracy, speed, timeMillis = time, isMock = false))
+        LocationUpdate.Fix(LocationSample(p, accuracy, speed, elapsedMillis = time, isMock = false))
 
     private fun TestScope.start(): Job =
         backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { tracker.run() }
@@ -120,6 +120,16 @@ class WalkTrackerTest {
         assertTrue(territory.captureCalls.isEmpty())
         emitAll(fix(a, accuracy = 10f))
         assertEquals(false, tracking.state.value.isGpsWeak)
+    }
+
+    @Test
+    fun `위치가 끊겼다 돌아오면 후보와 속도 기준 fix 를 버린다 - 복구 뒤 한 번의 fix 로는 캡처하지 않는다`() = runTest {
+        start()
+        emitAll(fix(a), fix(a)) // a 캡처
+        emitAll(fix(b), LocationUpdate.Unavailable, fix(b, time = 60_000L))
+        assertEquals(listOf(grid.cellOf(a)), territory.captureCalls)
+        emitAll(fix(b, time = 65_000L))
+        assertEquals(listOf(grid.cellOf(a), grid.cellOf(b)), territory.captureCalls)
     }
 
     @Test
