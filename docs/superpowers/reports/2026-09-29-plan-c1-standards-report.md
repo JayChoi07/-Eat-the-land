@@ -78,7 +78,7 @@
 
 | 결정 | 구현 |
 |---|---|
-| 화면 전환은 항상 Activity 식 좌우 슬라이드(push 우→좌 밀어내기, pop 좌→우 나감) | `app/.../AppTransitions.kt` — `NavDisplay` 의 `transitionSpec`·`popTransitionSpec`·`predictivePopTransitionSpec` 고정. S22 10배 슬로모션 프레임으로 방향 확인 |
+| 화면 전환은 항상 Activity 식 좌우 슬라이드(push 는 새 화면이 오른쪽에서 위로 덮음, pop 은 위 화면이 오른쪽으로 빠짐, 아래 화면 고정) | `app/.../AppTransitions.kt` — `NavDisplay` 의 `transitionSpec`·`popTransitionSpec`·`predictivePopTransitionSpec` 고정. 1차(밀어내기 parallax)는 카카오 MapView(SurfaceView)가 오프셋을 못 따라와 잘려 보여 사용자 지적 → 아래 화면 고정으로 변경. S22 10배 슬로모션 프레임·빠른 반복 후 정착 확인 |
 | 모든 화면 엣지 투 엣지(시스템 바 뒤까지) + 화면별 inset | 루트 `Scaffold(contentWindowInsets = WindowInsets(0))`, 스낵바 `safeDrawingPadding`, 지도는 오버레이만 `safeDrawingPadding`, 온보딩 본문 `safeDrawingPadding`, 앱바 화면은 자체 Scaffold+TopAppBar 가 처리. 골든 불변(Robolectric inset 0) |
 
 ## 최종 리뷰 (Codex gpt-6-astra, effort high, 읽기 전용, 범위 `3540dbc..22d5210`)
