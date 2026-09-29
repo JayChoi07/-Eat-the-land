@@ -4,6 +4,7 @@ import com.google.firebase.Firebase
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.FirebaseFirestoreException
+import com.google.firebase.firestore.Source
 import com.google.firebase.firestore.Transaction
 import com.google.firebase.firestore.firestore
 import javax.inject.Inject
@@ -20,14 +21,21 @@ class FirestoreNicknameDataSource @Inject constructor() : NicknameDataSource {
         throw DataSourceException(failure.toKind(), failure)
     }
 
+    // 오프라인 보호(최종 리뷰 I1, 실기기 실증): 배치는 오프라인에서 로컬에 보관되고 트랜잭션은 대기했다가
+    // 재연결 때 실행된다 — 코루틴 타임아웃은 await 만 끊을 뿐 SDK 작업을 멈추지 못한다. 그래서 파괴적 쓰기
+    // 전에 서버에서 직접 읽어(Source.SERVER) 오프라인이면 여기서 실패시키고 아무것도 쓰지 않는다.
+    // 삭제 자체엔 타임아웃을 두지 않는다 — 끊기면 화면이 기다리고(뒤로 차단) 재연결 때 끝난다.
     override suspend fun deleteProfile(uid: String) {
         val db = Firebase.firestore
         val failure = runCatching {
             val userRef = db.document("users/$uid")
-            val lower = userRef.get().await().getString("nicknameLower") ?: return
-            val batch = db.batch().delete(userRef)
-            batch.delete(db.document("nicknames/$lower"))
-            batch.commit().await()
+            val lower = userRef.get(Source.SERVER).await().getString("nicknameLower")
+            if (lower != null) {
+                db.runTransaction { tx ->
+                    tx.delete(userRef)
+                    tx.delete(db.document("nicknames/$lower"))
+                }.await()
+            }
         }.exceptionOrNull() ?: return
         if (failure is CancellationException) throw failure
         throw DataSourceException(failure.toDeleteKind(), failure)

@@ -91,6 +91,26 @@ class DefaultRankingRepositoryTest {
     }
 
     @Test
+    fun `uid 가 바뀌면(계정 삭제 뒤 재가입) 캐시를 버리고 새 계정 기준으로 읽는다`() = runTest {
+        users.users.value = mapOf("me" to user("나", 5), "new" to user("새계정", 0))
+        assertEquals(MyRank(1, 5), load().ranking.me)
+        auth.uid.value = "new"
+        val ranking = load().ranking
+        assertNull(ranking.me)
+        assertEquals(2, users.topCalls)
+    }
+
+    @Test
+    fun `uid 가 바뀐 뒤 실패하면 옛 계정 캐시를 동봉하지 않는다`() = runTest {
+        users.users.value = mapOf("me" to user("나", 5))
+        load()
+        auth.uid.value = "new"
+        users.topError = DataSourceException(DataSourceException.Kind.Offline)
+        val failure = repo.load(force = false) as RankingLoad.Failure
+        assertNull(failure.cached)
+    }
+
+    @Test
     fun `로그인 전이면 목록만 있고 내 순위는 없다`() = runTest {
         auth.uid.value = null
         users.users.value = mapOf("a" to user("A", 3))

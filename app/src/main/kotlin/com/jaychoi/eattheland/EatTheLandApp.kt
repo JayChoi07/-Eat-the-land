@@ -114,8 +114,11 @@ fun EatTheLandApp(
                     versionName = BuildConfig.VERSION_NAME,
                     onBack = { navigator.goBack() },
                     onOpenLicenses = { navigator.navigate(LicensesKey) },
-                    // 프로필이 사라졌다 — 백스택을 온보딩 하나로.
-                    onDeleted = { navigator.replaceAll(OnboardingKey) },
+                    // 프로필이 사라졌다 — 진행 중 산책을 끝내고(새 계정으로 캡처가 이어지지 않게) 백스택을 온보딩 하나로.
+                    onDeleted = {
+                        LocationTrackingService.stop(context)
+                        navigator.replaceAll(OnboardingKey)
+                    },
                 )
                 licensesEntry(onBack = { navigator.goBack() })
             },

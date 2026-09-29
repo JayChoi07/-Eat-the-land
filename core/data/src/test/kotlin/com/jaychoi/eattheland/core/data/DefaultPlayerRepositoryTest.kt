@@ -1,12 +1,17 @@
 package com.jaychoi.eattheland.core.data
 
 import app.cash.turbine.test
+import com.jaychoi.eattheland.core.common.Clock
+import com.jaychoi.eattheland.core.data.sync.PendingCaptureQueue
+import com.jaychoi.eattheland.core.datastore.PendingCapture
 import com.jaychoi.eattheland.core.model.Player
 import com.jaychoi.eattheland.core.model.PlayerError
 import com.jaychoi.eattheland.core.network.DataSourceException
 import com.jaychoi.eattheland.core.network.UserDto
 import com.jaychoi.eattheland.core.testing.FakeAuthDataSource
 import com.jaychoi.eattheland.core.testing.FakeNicknameDataSource
+import com.jaychoi.eattheland.core.testing.FakePendingCaptureDataSource
+import com.jaychoi.eattheland.core.testing.FakePendingCaptureScheduler
 import com.jaychoi.eattheland.core.testing.FakeUserDataSource
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -27,11 +32,18 @@ class DefaultPlayerRepositoryTest {
     private val auth = FakeAuthDataSource(initialUid = "u1")
     private val users = FakeUserDataSource()
     private val nicknames = FakeNicknameDataSource()
+    private val pendingSource = FakePendingCaptureDataSource()
+    private val queue = PendingCaptureQueue(
+        pendingSource,
+        FakePendingCaptureScheduler(),
+        Clock { 0L },
+    )
 
     private fun repo(dispatcher: CoroutineDispatcher) = DefaultPlayerRepository(
         auth,
         users,
         nicknames,
+        queue,
         dispatcher,
     )
 
@@ -165,6 +177,23 @@ class DefaultPlayerRepositoryTest {
         assertEquals(1, auth.deleteCalls)
         assertEquals(1, auth.signOutCalls)
         assertNull(auth.uid.value)
+    }
+
+    @Test
+    fun `deleteAccount 성공은 전송 대기 큐를 비운다`() = runTest {
+        pendingSource.stored.value = listOf(PendingCapture("8b30e1d8c0b1fff", 1L))
+        val repo = repo(StandardTestDispatcher(testScheduler))
+        assertNull(repo.deleteAccount())
+        assertTrue(pendingSource.stored.value.isEmpty())
+    }
+
+    @Test
+    fun `배치 삭제가 실패하면 전송 대기 큐는 그대로`() = runTest {
+        pendingSource.stored.value = listOf(PendingCapture("8b30e1d8c0b1fff", 1L))
+        nicknames.deleteError = DataSourceException(DataSourceException.Kind.Offline)
+        val repo = repo(StandardTestDispatcher(testScheduler))
+        assertEquals(PlayerError.Network, repo.deleteAccount())
+        assertEquals(1, pendingSource.stored.value.size)
     }
 
     @Test

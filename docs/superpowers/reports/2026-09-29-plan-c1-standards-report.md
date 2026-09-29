@@ -34,7 +34,7 @@
 | 게이트 (R-31-01) | 판정 |
 |---|---|
 | `ktlintCheck` · `detektDebug` | 통과 |
-| `testDebugUnitTest` + `:core:domain:test` | 통과 — 단위 146(플랜 B-2 109 → DoubleBackGate 2·AppRootViewModel +1·Onboarding +1·PlayerRepository +4·SettingsViewModel 8·RankingRepository 8·RankingViewModel 5 + 스크린샷 8) |
+| `testDebugUnitTest` + `:core:domain:test` | 통과 — 단위 146(플랜 B-2 109 → DoubleBackGate 2·AppRootViewModel +1·Onboarding +1·PlayerRepository +4·SettingsViewModel 8·RankingRepository 8·RankingViewModel 5 + 스크린샷 8), 최종 리뷰 반영 뒤 152 |
 | `verifyRoborazziDebug` | 통과 — 골든 16장(설정 4·랭킹 4 신규, 지도 4 재기록: 우상단 아이콘) |
 | `assembleDebug` | 통과 |
 | 규칙 테스트 | 변경 없음(삭제 짝 규칙은 플랜 A 부터) |
@@ -74,6 +74,29 @@
 
 스펙 본문은 이 표대로 갱신됨(이 커밋).
 
-## 최종 리뷰 (Codex gpt-6-astra, effort high, 읽기 전용, 범위 `3540dbc..HEAD`)
+## 실행 중 추가된 사용자 결정 (2026-09-29, 리뷰 대기 중)
 
-(아래 절은 리뷰 뒤 갱신)
+| 결정 | 구현 |
+|---|---|
+| 화면 전환은 항상 Activity 식 좌우 슬라이드(push 우→좌 밀어내기, pop 좌→우 나감) | `app/.../AppTransitions.kt` — `NavDisplay` 의 `transitionSpec`·`popTransitionSpec`·`predictivePopTransitionSpec` 고정. S22 10배 슬로모션 프레임으로 방향 확인 |
+| 모든 화면 엣지 투 엣지(시스템 바 뒤까지) + 화면별 inset | 루트 `Scaffold(contentWindowInsets = WindowInsets(0))`, 스낵바 `safeDrawingPadding`, 지도는 오버레이만 `safeDrawingPadding`, 온보딩 본문 `safeDrawingPadding`, 앱바 화면은 자체 Scaffold+TopAppBar 가 처리. 골든 불변(Robolectric inset 0) |
+
+## 최종 리뷰 (Codex gpt-6-astra, effort high, 읽기 전용, 범위 `3540dbc..22d5210`)
+
+판정 With fixes → Important 5건 반영, 4게이트 통과·단위 152, 실기기 재확인(I1 오프라인 실증).
+
+| # | 등급 | 지적 | 처리 |
+|---|---|---|---|
+| 1 | Important | 오프라인 배치 삭제가 로컬에 보관됐다가 재연결 때 실행 — "실패·프로필 유지"가 아님 | 1차안(트랜잭션+코루틴 타임아웃)은 **실기기에서 재연결 뒤 삭제 실행 확인(RED)** — `await` 취소는 SDK 작업을 못 멈춤. 2차안: 삭제 전 `users/{uid}` `get(Source.SERVER)` 로 서버 확인(오프라인이면 여기서 실패, 아무것도 안 씀) + 삭제엔 타임아웃 없음. 실기기: Wi-Fi off → 2초 내 "네트워크 연결을 확인해 주세요", 재연결 후 문서 잔존 ✅ |
+| 2 | Important | 삭제 중 뒤로가기로 ViewModel 이 정리돼 Auth 삭제·완료 이동이 끊김 | `SettingsScreen`: `isDeleting` 동안 앱바 아이콘 disabled + `BackHandler` 소비. `SettingsScreenTest` 2건 |
+| 3 | Important | 탈퇴해도 진행 중 산책·전송 대기 큐가 새 계정으로 이어짐 | `DefaultPlayerRepository.deleteAccount` 가 프로필 삭제 뒤 `PendingCaptureQueue.clear()`(생성자 5개), `:app` `onDeleted` 가 `LocationTrackingService.stop` 후 온보딩. 테스트 2건 |
+| 4 | Important | 랭킹 세션 캐시가 계정 경계를 넘어 옛 계정의 내 순위 표시 | `cacheUid` 귀속 — uid 가 다르면 캐시 무시·실패 시 동봉도 안 함. 테스트 2건 |
+| 5 | Important | 기본 `get()` 이 오프라인에서 디스크 캐시로 성공해 새로고침 실패 배너가 안 뜸 | `topByCellCount` `get(Source.SERVER)` |
+| 6 | Minor | Android 12 이하 알림 차단 시 항상 "허용됨" | 이월 |
+| 7 | Minor | 편집 중 라이선스 push 뒤 복귀 시 입력 잔존 | 이월 |
+| 8 | Minor | 설정 첫 프레임 권한 "거부됨" 깜빡임 | 이월 |
+| 9 | Minor | 두 번 뒤로가기 벽시계 사용 | 이월 |
+
+리뷰어 보류 4건(C-2 범위·치팅 방지·계정 연동·`cellCount` 없는 레거시 문서)은 스펙 범위 밖 — 결함 아님(레저 `Final: Ruling:`).
+
+실기기 부작용: I1 1차안 검증 중 `jay100409` 프로필이 재연결 뒤 삭제돼 재가입함(현재 uid `cF03jF…`, cellCount 0). 셀 `8b30e1c32214fff` 은 최초 uid `eBnH5t…` 소유로 남아 있다.

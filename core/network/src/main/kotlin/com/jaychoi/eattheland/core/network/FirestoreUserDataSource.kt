@@ -4,6 +4,7 @@ import com.google.firebase.Firebase
 import com.google.firebase.firestore.AggregateSource
 import com.google.firebase.firestore.FirebaseFirestoreException
 import com.google.firebase.firestore.Query
+import com.google.firebase.firestore.Source
 import com.google.firebase.firestore.firestore
 import javax.inject.Inject
 import kotlin.coroutines.cancellation.CancellationException
@@ -27,11 +28,13 @@ class FirestoreUserDataSource @Inject constructor() : UserDataSource {
         awaitClose { registration.remove() }
     }
 
+    // Source.SERVER: 기본 get() 은 서버 실패 시 디스크 캐시로 조용히 성공해 오프라인 새로고침이 "성공"이 된다.
+    // 메모리 캐시는 Repository 가 갖고 있으므로 여기선 서버만 본다(최종 리뷰 I5).
     override suspend fun topByCellCount(limit: Int): List<Pair<String, UserDto>> = guard {
         Firebase.firestore.collection("users")
             .orderBy("cellCount", Query.Direction.DESCENDING)
             .limit(limit.toLong())
-            .get().await()
+            .get(Source.SERVER).await()
             .documents.map { it.id to (it.toObject(UserDto::class.java) ?: UserDto()) }
     }
 

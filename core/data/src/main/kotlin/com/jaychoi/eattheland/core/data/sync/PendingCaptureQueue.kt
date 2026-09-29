@@ -56,6 +56,11 @@ class PendingCaptureQueue @Inject constructor(
         }
     }
 
+    /** 계정 삭제 뒤 — 옛 계정의 미전송 캡처가 새 계정으로 흘러가지 않게 전부 버린다. */
+    suspend fun clear() {
+        source.update { emptyList() }
+    }
+
     private companion object {
         const val MAX_ITEMS = 300
         const val MAX_AGE_MILLIS = 24L * 60 * 60 * 1_000

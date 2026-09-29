@@ -1,5 +1,6 @@
 package com.jaychoi.eattheland.feature.settings.ui
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -48,13 +49,15 @@ fun SettingsScreen(
     onOpenLicenses: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    // 삭제 진행 중엔 뒤로가기를 막는다 — 화면이 pop 되면 ViewModel 이 정리돼 Auth 삭제·완료 이동이 끊긴다.
+    BackHandler(enabled = uiState.isDeleting) {}
     Scaffold(
         modifier = modifier,
         topBar = {
             TopAppBar(
                 title = { Text(stringResource(R.string.settings_title)) },
                 navigationIcon = {
-                    IconButton(onClick = onBack) {
+                    IconButton(onClick = onBack, enabled = !uiState.isDeleting) {
                         Icon(
                             Icons.AutoMirrored.Filled.ArrowBack,
                             stringResource(R.string.settings_back),

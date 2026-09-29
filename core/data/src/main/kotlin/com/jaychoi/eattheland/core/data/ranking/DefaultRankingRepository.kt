@@ -24,31 +24,36 @@ class DefaultRankingRepository @Inject constructor(
     private val users: UserDataSource,
     private val auth: AuthDataSource,
 ) : RankingRepository {
+    // 캐시는 uid 에 귀속된다 — 계정 삭제 뒤 재가입하면 옛 계정의 내 순위를 보여주지 않는다(최종 리뷰 I4).
     private var cache: Ranking? = null
+    private var cacheUid: String? = null
     private val mutex = Mutex()
 
     override suspend fun load(force: Boolean): RankingLoad = mutex.withLock {
-        cache?.takeIf { !force }?.let { return@withLock RankingLoad.Success(it) }
+        val uid = auth.uid.first()
+        val cached = cache?.takeIf { cacheUid == uid }
+        if (!force && cached != null) return@withLock RankingLoad.Success(cached)
         try {
-            val ranking = fetch()
+            val ranking = fetch(uid)
             cache = ranking
+            cacheUid = uid
             RankingLoad.Success(ranking)
         } catch (e: CancellationException) {
             throw e
         } catch (e: DataSourceException) {
-            RankingLoad.Failure(e.toRankingError(), cache)
+            RankingLoad.Failure(e.toRankingError(), cached)
         }
     }
 
-    private suspend fun fetch(): Ranking {
+    private suspend fun fetch(uid: String?): Ranking {
         val rows = users.topByCellCount(TOP_LIMIT)
-        val entries = rows.map { (uid, dto) ->
+        val entries = rows.map { (rowUid, dto) ->
             val cells = dto.cellCount?.toInt() ?: 0
             // 동점은 같은 순위: 칸 수가 더 많은 사람 수 + 1 (1,1,3)
             val rank = rows.count { (it.second.cellCount?.toInt() ?: 0) > cells } + 1
-            RankEntry(rank, uid, dto.nickname.orEmpty(), (dto.color ?: 0L).toInt(), cells)
+            RankEntry(rank, rowUid, dto.nickname.orEmpty(), (dto.color ?: 0L).toInt(), cells)
         }
-        val uid = auth.uid.first() ?: return Ranking(entries, me = null)
+        if (uid == null) return Ranking(entries, me = null)
         return Ranking(entries, me = myRank(uid, entries))
     }
 

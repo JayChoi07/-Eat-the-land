@@ -1,6 +1,7 @@
 package com.jaychoi.eattheland.core.data
 
 import com.jaychoi.eattheland.core.common.IoDispatcher
+import com.jaychoi.eattheland.core.data.sync.PendingCaptureQueue
 import com.jaychoi.eattheland.core.model.Player
 import com.jaychoi.eattheland.core.model.PlayerError
 import com.jaychoi.eattheland.core.network.AuthDataSource
@@ -23,6 +24,7 @@ class DefaultPlayerRepository @Inject constructor(
     private val auth: AuthDataSource,
     private val users: UserDataSource,
     private val nicknames: NicknameDataSource,
+    private val pendingQueue: PendingCaptureQueue,
     @IoDispatcher private val io: CoroutineDispatcher,
 ) : PlayerRepository {
 
@@ -50,9 +52,13 @@ class DefaultPlayerRepository @Inject constructor(
 
     override suspend fun deleteAccount(): PlayerError? = withContext(io) {
         val uid = auth.uid.first() ?: return@withContext null
+        // 타임아웃을 두지 않는다 — await 를 끊어도 SDK 의 삭제는 계속돼 "실패했다"고 알린 뒤 지워질 수 있다.
+        // 오프라인 판정은 데이터소스가 서버 읽기(Source.SERVER)로 먼저 한다.
         val failure = guard { nicknames.deleteProfile(uid) }
         if (failure != null) return@withContext failure
-        // 데이터는 지워졌다. Auth 삭제가 재인증 요구 등으로 실패하면 로그아웃으로 같은 결과(새 익명 계정)를 만든다.
+        // 데이터는 지워졌다. 옛 계정의 미전송 캡처가 새 계정에 붙지 않게 큐를 비운다.
+        pendingQueue.clear()
+        // Auth 삭제가 재인증 요구 등으로 실패하면 로그아웃으로 같은 결과(새 익명 계정)를 만든다.
         if (guard { auth.deleteCurrentUser() } != null) auth.signOut()
         null
     }
