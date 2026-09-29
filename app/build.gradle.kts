@@ -81,6 +81,8 @@ dependencies {
     implementation(projects.core.domain)
     implementation(projects.feature.onboarding)
     implementation(projects.feature.map)
+    implementation(projects.feature.settings)
+    implementation(projects.feature.ranking)
     implementation(libs.androidx.lifecycle.runtime.compose)
     implementation(libs.androidx.lifecycle.viewmodel.compose)
     implementation(libs.androidx.hilt.lifecycle.viewmodel.compose)

@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.LocationOn
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Button
 import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.Icon
@@ -21,6 +22,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
@@ -34,6 +36,8 @@ fun MapScreen(
     uiState: MapUiState,
     onEvent: (MapEvent) -> Unit,
     onWalkToggle: () -> Unit,
+    onOpenAppSettings: () -> Unit,
+    onOpenRanking: () -> Unit,
     onOpenSettings: () -> Unit,
     modifier: Modifier = Modifier,
     map: @Composable () -> Unit,
@@ -41,7 +45,26 @@ fun MapScreen(
     Box(modifier = modifier.fillMaxSize()) {
         map()
         uiState.player?.let { player ->
-            StatusChip(uiState, player, Modifier.align(Alignment.TopCenter).padding(16.dp))
+            // 좌우 여백은 우상단 아이콘 2개(≈96dp)와 겹치지 않기 위한 것.
+            StatusChip(
+                uiState,
+                player,
+                Modifier
+                    .align(Alignment.TopCenter)
+                    .padding(top = 16.dp, start = 72.dp, end = 104.dp),
+            )
+        }
+        Row(modifier = Modifier.align(Alignment.TopEnd).padding(16.dp)) {
+            FilledTonalIconButton(onClick = onOpenRanking) {
+                Icon(
+                    painterResource(R.drawable.ic_leaderboard),
+                    stringResource(R.string.map_open_ranking),
+                )
+            }
+            Spacer(Modifier.width(8.dp))
+            FilledTonalIconButton(onClick = onOpenSettings) {
+                Icon(Icons.Default.Settings, stringResource(R.string.map_open_app_settings))
+            }
         }
         Column(
             modifier = Modifier.align(Alignment.BottomCenter).padding(24.dp),
@@ -50,7 +73,7 @@ fun MapScreen(
             if (uiState.isZoomedOut) Hint(stringResource(R.string.map_zoomed_out_hint))
             if (uiState.showPermissionNotice) {
                 PermissionNotice(
-                    onOpenSettings = onOpenSettings,
+                    onOpenSettings = onOpenAppSettings,
                     onDismiss = { onEvent(MapEvent.PermissionNoticeDismissed) },
                 )
             }
@@ -185,6 +208,8 @@ private fun MapScreenPreview() {
             ),
             onEvent = {},
             onWalkToggle = {},
+            onOpenAppSettings = {},
+            onOpenRanking = {},
             onOpenSettings = {},
         ) { }
     }

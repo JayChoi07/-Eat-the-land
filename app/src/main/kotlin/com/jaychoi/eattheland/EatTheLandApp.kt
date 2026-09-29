@@ -32,6 +32,12 @@ import com.jaychoi.eattheland.feature.map.ui.MapKey
 import com.jaychoi.eattheland.feature.map.ui.mapEntry
 import com.jaychoi.eattheland.feature.onboarding.ui.OnboardingKey
 import com.jaychoi.eattheland.feature.onboarding.ui.onboardingEntry
+import com.jaychoi.eattheland.feature.ranking.ui.RankingKey
+import com.jaychoi.eattheland.feature.ranking.ui.rankingEntry
+import com.jaychoi.eattheland.feature.settings.ui.LicensesKey
+import com.jaychoi.eattheland.feature.settings.ui.SettingsKey
+import com.jaychoi.eattheland.feature.settings.ui.licensesEntry
+import com.jaychoi.eattheland.feature.settings.ui.settingsEntry
 import com.jaychoi.eattheland.tracking.LocationTrackingService
 import com.jaychoi.eattheland.ui.AppRootViewModel
 import kotlinx.coroutines.launch
@@ -101,7 +107,18 @@ fun EatTheLandApp(
                 mapEntry(
                     onStartWalk = { LocationTrackingService.start(context) },
                     onStopWalk = { LocationTrackingService.stop(context) },
+                    onOpenRanking = { navigator.navigate(RankingKey) },
+                    onOpenSettings = { navigator.navigate(SettingsKey) },
                 )
+                rankingEntry(onBack = { navigator.goBack() })
+                settingsEntry(
+                    versionName = BuildConfig.VERSION_NAME,
+                    onBack = { navigator.goBack() },
+                    onOpenLicenses = { navigator.navigate(LicensesKey) },
+                    // 프로필이 사라졌다 — 백스택을 온보딩 하나로.
+                    onDeleted = { navigator.replaceAll(OnboardingKey) },
+                )
+                licensesEntry(onBack = { navigator.goBack() })
             },
         )
     }

@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 순위표(막대 3개). 색은 Compose Icon 이 LocalContentColor 로 입힌다 — tint 속성 없음. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:fillColor="@android:color/white"
+        android:pathData="M3,13h4v8H3zM10,3h4v18h-4zM17,9h4v12h-4z" />
+</vector>

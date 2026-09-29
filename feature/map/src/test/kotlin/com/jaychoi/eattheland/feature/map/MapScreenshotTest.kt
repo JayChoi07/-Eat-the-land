@@ -28,7 +28,14 @@ class MapScreenshotTest {
     private fun capture(state: MapUiState) {
         composeRule.setContent {
             AppTheme {
-                MapScreen(state, onEvent = {}, onWalkToggle = {}, onOpenSettings = {}) {
+                MapScreen(
+                    state,
+                    onEvent = {},
+                    onWalkToggle = {},
+                    onOpenAppSettings = {},
+                    onOpenRanking = {},
+                    onOpenSettings = {},
+                ) {
                     Box(
                         Modifier.fillMaxSize().background(
                             MaterialTheme.colorScheme.surfaceContainer,

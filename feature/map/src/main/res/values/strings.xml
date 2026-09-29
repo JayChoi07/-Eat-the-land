@@ -13,4 +13,6 @@
     <string name="map_open_settings">설정 열기</string>
     <string name="map_dismiss">닫기</string>
     <string name="map_my_location">내 위치</string>
+    <string name="map_open_ranking">랭킹</string>
+    <string name="map_open_app_settings">설정</string>
 </resources>

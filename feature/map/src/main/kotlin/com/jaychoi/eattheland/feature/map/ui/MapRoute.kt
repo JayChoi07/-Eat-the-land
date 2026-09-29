@@ -25,14 +25,28 @@ private const val DEFAULT_ZOOM = 16
 private const val FILL_ALPHA = 0.4f
 
 /** 산책 시작/종료는 :app 이 FGS 로 잇는다 — feature 는 콜백만 노출한다(스펙 §5). */
-fun EntryProviderScope<NavKey>.mapEntry(onStartWalk: () -> Unit, onStopWalk: () -> Unit) {
-    entry<MapKey> { MapRoute(onStartWalk = onStartWalk, onStopWalk = onStopWalk) }
+fun EntryProviderScope<NavKey>.mapEntry(
+    onStartWalk: () -> Unit,
+    onStopWalk: () -> Unit,
+    onOpenRanking: () -> Unit,
+    onOpenSettings: () -> Unit,
+) {
+    entry<MapKey> {
+        MapRoute(
+            onStartWalk = onStartWalk,
+            onStopWalk = onStopWalk,
+            onOpenRanking = onOpenRanking,
+            onOpenSettings = onOpenSettings,
+        )
+    }
 }
 
 @Composable
 internal fun MapRoute(
     onStartWalk: () -> Unit,
     onStopWalk: () -> Unit,
+    onOpenRanking: () -> Unit,
+    onOpenSettings: () -> Unit,
     viewModel: MapViewModel = hiltViewModel(),
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
@@ -55,15 +69,7 @@ internal fun MapRoute(
         if (granted) onStartWalk()
     }
 
-    val drawable = uiState.cells.map { cell ->
-        val color = TerritoryPalette.color(cell.colorIndex)
-        DrawableCell(
-            id = cell.id.value,
-            points = cell.points,
-            fillArgb = color.copy(alpha = FILL_ALPHA).toArgb(),
-            strokeArgb = color.toArgb(),
-        )
-    }
+    val drawable = uiState.cells.map { drawableCell(it) }
     val myLocationStyle = MyLocationStyle(
         fillArgb = MaterialTheme.colorScheme.primary.toArgb(),
         ringArgb = MaterialTheme.colorScheme.surface.toArgb(),
@@ -80,7 +86,9 @@ internal fun MapRoute(
                 else -> launcher.launch(locationPermissions())
             }
         },
-        onOpenSettings = { context.openAppSettings() },
+        onOpenAppSettings = { context.openAppSettings() },
+        onOpenRanking = onOpenRanking,
+        onOpenSettings = onOpenSettings,
     ) {
         // attempt 가 바뀌면 컴포저블이 새로 만들어져 MapView.start 가 다시 돈다.
         key(uiState.mapAttempt) {
@@ -98,6 +106,17 @@ internal fun MapRoute(
             )
         }
     }
+}
+
+@Composable
+private fun drawableCell(cell: CellPolygon): DrawableCell {
+    val color = TerritoryPalette.color(cell.colorIndex)
+    return DrawableCell(
+        id = cell.id.value,
+        points = cell.points,
+        fillArgb = color.copy(alpha = FILL_ALPHA).toArgb(),
+        strokeArgb = color.toArgb(),
+    )
 }
 
 private fun locationPermissions(): Array<String> = arrayOf(
