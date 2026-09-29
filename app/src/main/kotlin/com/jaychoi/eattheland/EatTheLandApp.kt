@@ -4,8 +4,9 @@ import android.app.Activity
 import android.content.Context
 import android.content.ContextWrapper
 import androidx.activity.compose.BackHandler
-import androidx.compose.foundation.layout.consumeWindowInsets
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
@@ -68,32 +69,30 @@ fun EatTheLandApp(
     }
 
     val snackbarHostState = remember { SnackbarHostState() }
-    val gate = remember { DoubleBackGate() }
-    val scope = rememberCoroutineScope()
-    val exitMessage = stringResource(
-        if (uiState.isTracking) R.string.back_again_while_walking else R.string.back_again_to_exit,
-    )
-    val activity = context.findActivity()
     // 백스택이 하나뿐일 때만 — 랭킹·설정·온보딩 단계는 각자 pop 한다(스펙 C §4).
-    BackHandler(enabled = backStack.size == 1) {
-        if (gate.press(System.currentTimeMillis())) {
-            activity?.finish()
-        } else {
-            scope.launch {
-                snackbarHostState.showSnackbar(exitMessage, duration = SnackbarDuration.Short)
-            }
-        }
-    }
+    DoubleBackExit(
+        enabled = backStack.size == 1,
+        isTracking = uiState.isTracking,
+        snackbarHostState = snackbarHostState,
+    )
 
+    // 엣지 투 엣지(사용자 결정 2026-09-29): 루트는 인셋을 먹지 않고 화면 전체를 준다. 시스템 바 뒤로 콘텐츠가
+    // 깔리고, 각 화면이 필요한 곳(앱바·오버레이·본문)에만 safeDrawing 인셋을 댄다 (R-18-08).
     Scaffold(
         modifier = modifier,
-        snackbarHost = { SnackbarHost(snackbarHostState) },
+        contentWindowInsets = WindowInsets(0),
+        snackbarHost = {
+            SnackbarHost(snackbarHostState, modifier = Modifier.safeDrawingPadding())
+        },
     ) { innerPadding ->
         NavDisplay(
             backStack = backStack,
-            // Scaffold 는 인셋을 소비하지 않으므로 여기서 소비를 표시한다 (R-18-08).
-            modifier = Modifier.padding(innerPadding).consumeWindowInsets(innerPadding),
+            modifier = Modifier.padding(innerPadding),
             onBack = { navigator.goBack() },
+            // Activity 식 좌우 밀어내기 전환 — 앱 전체 고정(사용자 결정).
+            transitionSpec = AppTransitions.push(),
+            popTransitionSpec = AppTransitions.pop(),
+            predictivePopTransitionSpec = AppTransitions.predictivePop(),
             // 첫 항목이 SaveableStateHolder 여야 엔트리 상태가 복원되고, 둘째 줄이 있어야
             // ViewModel 이 NavEntry 단위로 살고 정리된다 (R-13-05).
             entryDecorators = listOf(
@@ -121,6 +120,30 @@ fun EatTheLandApp(
                 licensesEntry(onBack = { navigator.goBack() })
             },
         )
+    }
+}
+
+/** 두 번 눌러 종료. 첫 누름은 스낵바(산책 중이면 문구가 다르다), 2초 안의 두 번째는 Activity 종료. */
+@Composable
+private fun DoubleBackExit(
+    enabled: Boolean,
+    isTracking: Boolean,
+    snackbarHostState: SnackbarHostState,
+) {
+    val gate = remember { DoubleBackGate() }
+    val scope = rememberCoroutineScope()
+    val exitMessage = stringResource(
+        if (isTracking) R.string.back_again_while_walking else R.string.back_again_to_exit,
+    )
+    val activity = LocalContext.current.findActivity()
+    BackHandler(enabled = enabled) {
+        if (gate.press(System.currentTimeMillis())) {
+            activity?.finish()
+        } else {
+            scope.launch {
+                snackbarHostState.showSnackbar(exitMessage, duration = SnackbarDuration.Short)
+            }
+        }
     }
 }
 

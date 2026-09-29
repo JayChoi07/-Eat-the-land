@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.LocationOn
@@ -43,7 +44,32 @@ fun MapScreen(
     map: @Composable () -> Unit,
 ) {
     Box(modifier = modifier.fillMaxSize()) {
+        // 지도는 시스템 바 뒤까지 깔리고(엣지 투 엣지), 오버레이만 안전 영역 안에 둔다.
         map()
+        MapOverlays(
+            uiState = uiState,
+            onEvent = onEvent,
+            onWalkToggle = onWalkToggle,
+            onOpenAppSettings = onOpenAppSettings,
+            onOpenRanking = onOpenRanking,
+            onOpenSettings = onOpenSettings,
+        )
+        if (uiState.mapLoadFailed) {
+            MapLoadFailed(onRetry = { onEvent(MapEvent.RetryMap) })
+        }
+    }
+}
+
+@Composable
+private fun MapOverlays(
+    uiState: MapUiState,
+    onEvent: (MapEvent) -> Unit,
+    onWalkToggle: () -> Unit,
+    onOpenAppSettings: () -> Unit,
+    onOpenRanking: () -> Unit,
+    onOpenSettings: () -> Unit,
+) {
+    Box(modifier = Modifier.fillMaxSize().safeDrawingPadding()) {
         uiState.player?.let { player ->
             // 좌우 여백은 우상단 아이콘 2개(≈96dp)와 겹치지 않기 위한 것.
             StatusChip(
@@ -94,9 +120,6 @@ fun MapScreen(
                 Icons.Default.LocationOn,
                 contentDescription = stringResource(R.string.map_my_location),
             )
-        }
-        if (uiState.mapLoadFailed) {
-            MapLoadFailed(onRetry = { onEvent(MapEvent.RetryMap) })
         }
     }
 }
@@ -180,7 +203,7 @@ private fun PermissionNotice(onOpenSettings: () -> Unit, onDismiss: () -> Unit) 
 private fun MapLoadFailed(onRetry: () -> Unit) {
     Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.surface) {
         Column(
-            modifier = Modifier.fillMaxSize().padding(24.dp),
+            modifier = Modifier.fillMaxSize().safeDrawingPadding().padding(24.dp),
             verticalArrangement = Arrangement.Center,
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
