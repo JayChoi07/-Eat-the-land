@@ -1,12 +1,20 @@
 package com.jaychoi.eattheland.core.data
 
 import app.cash.turbine.test
+import com.jaychoi.eattheland.core.common.Clock
+import com.jaychoi.eattheland.core.data.sync.PendingCaptureQueue
+import com.jaychoi.eattheland.core.datastore.PendingCapture
+import com.jaychoi.eattheland.core.model.CaptureResult
 import com.jaychoi.eattheland.core.model.Cell
 import com.jaychoi.eattheland.core.model.LatLngPoint
+import com.jaychoi.eattheland.core.network.CaptureOutcome
 import com.jaychoi.eattheland.core.network.CellDto
 import com.jaychoi.eattheland.core.network.DataSourceException
+import com.jaychoi.eattheland.core.testing.FakeAuthDataSource
 import com.jaychoi.eattheland.core.testing.FakeCellDataSource
 import com.jaychoi.eattheland.core.testing.FakeHexGrid
+import com.jaychoi.eattheland.core.testing.FakePendingCaptureDataSource
+import com.jaychoi.eattheland.core.testing.FakePendingCaptureScheduler
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.launch
@@ -15,13 +23,19 @@ import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class DefaultTerritoryRepositoryTest {
     private val source = FakeCellDataSource()
     private val grid = FakeHexGrid()
-    private val repo = DefaultTerritoryRepository(source, grid)
+    private val auth = FakeAuthDataSource(initialUid = "u1")
+    private val pendingSource = FakePendingCaptureDataSource()
+    private val scheduler = FakePendingCaptureScheduler()
+    private var now = 1_000L
+    private val queue = PendingCaptureQueue(pendingSource, scheduler, Clock { now })
+    private val repo = DefaultTerritoryRepository(source, grid, auth, queue)
 
     private val cell = grid.cellOf(LatLngPoint(37.5661, 126.9780))
     private val other = grid.cellOf(LatLngPoint(37.5679, 126.9780))
@@ -90,6 +104,69 @@ class DefaultTerritoryRepositoryTest {
         repo.observeCells(setOf(region)).test {
             assertEquals("bug", awaitError().message)
         }
+    }
+
+    @Test
+    fun `capture 는 내 uid·색·region 으로 데이터소스를 부르고 Captured`() = runTest {
+        assertEquals(CaptureResult.Captured, repo.capture(cell))
+        assertEquals(listOf(cell.value), source.captures)
+        assertEquals(0, scheduler.scheduled)
+    }
+
+    @Test
+    fun `이미 내 셀이면 AlreadyMine`() = runTest {
+        source.captureOutcome = CaptureOutcome.AlreadyMine
+        assertEquals(CaptureResult.AlreadyMine, repo.capture(cell))
+    }
+
+    @Test
+    fun `오프라인이면 큐에 넣고 Queued, pendingCount 가 오른다`() = runTest {
+        source.captureError = DataSourceException(DataSourceException.Kind.Offline)
+        assertEquals(CaptureResult.Queued, repo.capture(cell))
+        assertEquals(listOf(cell.value), pendingSource.stored.value.map { it.cellId })
+        assertEquals(1, scheduler.scheduled)
+        repo.pendingCount.test { assertEquals(1, awaitItem()) }
+    }
+
+    @Test
+    fun `로그인 전이거나 권한 오류면 Failed 이고 큐에 넣지 않는다`() = runTest {
+        auth.uid.value = null
+        assertTrue(repo.capture(cell) is CaptureResult.Failed)
+        auth.uid.value = "u1"
+        source.captureError = DataSourceException(DataSourceException.Kind.PermissionDenied)
+        assertTrue(repo.capture(cell) is CaptureResult.Failed)
+        assertTrue(pendingSource.stored.value.isEmpty())
+    }
+
+    @Test
+    fun `flushPending 은 오래된 순으로 보내고 성공한 것만 지운다`() = runTest {
+        pendingSource.stored.value = listOf(
+            PendingCapture(other.value, 200L),
+            PendingCapture(cell.value, 100L),
+        )
+        assertEquals(0, repo.flushPending())
+        assertEquals(listOf(cell.value, other.value), source.captures)
+        assertTrue(pendingSource.stored.value.isEmpty())
+    }
+
+    @Test
+    fun `flushPending 중 오프라인이면 멈추고 남은 개수를 돌려준다`() = runTest {
+        pendingSource.stored.value = listOf(
+            PendingCapture(cell.value, 100L),
+            PendingCapture(other.value, 200L),
+        )
+        source.captureError = DataSourceException(DataSourceException.Kind.Offline)
+        assertEquals(2, repo.flushPending())
+        assertEquals(listOf(cell.value), source.captures) // 첫 실패에서 멈춘다
+        assertEquals(2, pendingSource.stored.value.size)
+    }
+
+    @Test
+    fun `flushPending 은 권한 오류 항목을 버리고 계속 간다`() = runTest {
+        pendingSource.stored.value = listOf(PendingCapture(cell.value, 100L))
+        source.captureError = DataSourceException(DataSourceException.Kind.PermissionDenied)
+        assertEquals(0, repo.flushPending())
+        assertTrue(pendingSource.stored.value.isEmpty())
     }
 
     private companion object {

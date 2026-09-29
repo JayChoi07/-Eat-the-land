@@ -12,6 +12,8 @@ dependencies {
     implementation(projects.core.model)
     implementation(projects.core.common)
     implementation(projects.core.network)
+    implementation(projects.core.datastore)
+    implementation(libs.androidx.work.runtime)
     implementation(libs.kotlinx.coroutines.android)
     testImplementation(projects.core.testing)
     testImplementation(libs.junit4)
