@@ -12,4 +12,10 @@ interface PlayerRepository {
     suspend fun ensureSignedIn(): PlayerError?
 
     suspend fun setNickname(nickname: String): PlayerError?
+
+    /**
+     * 스펙 C §5. 프로필·닉네임 예약을 지우고 Auth 계정을 지운다.
+     * Auth 삭제만 실패하면 로그아웃하고 성공. null = 성공.
+     */
+    suspend fun deleteAccount(): PlayerError?
 }

@@ -24,4 +24,14 @@ class FakePlayerRepository : PlayerRepository {
         }
         return setNicknameError
     }
+
+    var deleteAccountError: PlayerError? = null
+    var deleteCalls = 0
+        private set
+
+    override suspend fun deleteAccount(): PlayerError? {
+        deleteCalls++
+        if (deleteAccountError == null) playerFlow.value = null
+        return deleteAccountError
+    }
 }

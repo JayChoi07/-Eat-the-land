@@ -11,4 +11,12 @@ class FakeNicknameDataSource : NicknameDataSource {
         calls += Triple(uid, nickname, colorIfNew)
         error?.let { throw it }
     }
+
+    val deleteCalls = mutableListOf<String>()
+    var deleteError: DataSourceException? = null
+
+    override suspend fun deleteProfile(uid: String) {
+        deleteCalls += uid
+        deleteError?.let { throw it }
+    }
 }

@@ -30,4 +30,18 @@ class FirebaseAuthDataSource @Inject constructor() : AuthDataSource {
             throw DataSourceException(DataSourceException.Kind.Unknown, e)
         }
     }
+
+    @Suppress("TooGenericExceptionCaught")
+    override suspend fun deleteCurrentUser() {
+        val user = auth.currentUser ?: return
+        try {
+            user.delete().await()
+        } catch (e: FirebaseNetworkException) {
+            throw DataSourceException(DataSourceException.Kind.Offline, e)
+        } catch (e: Exception) {
+            throw DataSourceException(DataSourceException.Kind.Unknown, e)
+        }
+    }
+
+    override fun signOut() = auth.signOut()
 }

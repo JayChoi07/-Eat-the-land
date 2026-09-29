@@ -13,6 +13,7 @@ import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
@@ -45,6 +46,15 @@ class DefaultPlayerRepository @Inject constructor(
             val uid = auth.ensureSignedIn()
             nicknames.setNickname(uid = uid, nickname = nickname, colorIfNew = colorFor(uid))
         }
+    }
+
+    override suspend fun deleteAccount(): PlayerError? = withContext(io) {
+        val uid = auth.uid.first() ?: return@withContext null
+        val failure = guard { nicknames.deleteProfile(uid) }
+        if (failure != null) return@withContext failure
+        // 데이터는 지워졌다. Auth 삭제가 재인증 요구 등으로 실패하면 로그아웃으로 같은 결과(새 익명 계정)를 만든다.
+        if (guard { auth.deleteCurrentUser() } != null) auth.signOut()
+        null
     }
 
     // R-23: 데이터 계층 경계에서 모든 실패를 도메인 에러로 바꾼다. 그 변환이 이 함수의 일이다.

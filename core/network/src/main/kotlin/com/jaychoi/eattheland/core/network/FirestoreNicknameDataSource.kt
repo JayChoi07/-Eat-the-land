@@ -20,6 +20,35 @@ class FirestoreNicknameDataSource @Inject constructor() : NicknameDataSource {
         throw DataSourceException(failure.toKind(), failure)
     }
 
+    override suspend fun deleteProfile(uid: String) {
+        val db = Firebase.firestore
+        val failure = runCatching {
+            val userRef = db.document("users/$uid")
+            val lower = userRef.get().await().getString("nicknameLower") ?: return
+            val batch = db.batch().delete(userRef)
+            batch.delete(db.document("nicknames/$lower"))
+            batch.commit().await()
+        }.exceptionOrNull() ?: return
+        if (failure is CancellationException) throw failure
+        throw DataSourceException(failure.toDeleteKind(), failure)
+    }
+
+    // 삭제는 경합이 없으므로 PERMISSION_DENIED 를 그대로 둔다(setNickname 과 다름).
+    private fun Throwable.toDeleteKind(): DataSourceException.Kind = when (this) {
+        is FirebaseFirestoreException -> when (code) {
+            FirebaseFirestoreException.Code.PERMISSION_DENIED ->
+                DataSourceException.Kind.PermissionDenied
+
+            FirebaseFirestoreException.Code.UNAVAILABLE,
+            FirebaseFirestoreException.Code.DEADLINE_EXCEEDED,
+            -> DataSourceException.Kind.Offline
+
+            else -> DataSourceException.Kind.Unknown
+        }
+
+        else -> DataSourceException.Kind.Unknown
+    }
+
     /** 스펙 §4 setNickname 트랜잭션 본문. Firestore 는 람다의 예외를 그대로 밖으로 던진다. */
     private fun FirebaseFirestore.applyNickname(
         tx: Transaction,

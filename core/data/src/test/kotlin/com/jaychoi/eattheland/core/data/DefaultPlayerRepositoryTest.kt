@@ -139,6 +139,42 @@ class DefaultPlayerRepositoryTest {
         }
     }
 
+    @Test
+    fun `deleteAccount 는 프로필 짝 삭제 뒤 Auth 계정을 지우고 null`() = runTest {
+        val repo = repo(StandardTestDispatcher(testScheduler))
+        assertNull(repo.deleteAccount())
+        assertEquals(listOf("u1"), nicknames.deleteCalls)
+        assertEquals(1, auth.deleteCalls)
+        assertEquals(0, auth.signOutCalls)
+    }
+
+    @Test
+    fun `배치 삭제가 실패하면 Network 에러이고 Auth 는 건드리지 않는다`() = runTest {
+        nicknames.deleteError = DataSourceException(DataSourceException.Kind.Offline)
+        val repo = repo(StandardTestDispatcher(testScheduler))
+        assertEquals(PlayerError.Network, repo.deleteAccount())
+        assertEquals(0, auth.deleteCalls)
+        assertEquals(0, auth.signOutCalls)
+    }
+
+    @Test
+    fun `Auth 삭제가 실패해도 로그아웃하고 성공으로 본다 - 데이터는 이미 지워졌다`() = runTest {
+        auth.failDelete = true
+        val repo = repo(StandardTestDispatcher(testScheduler))
+        assertNull(repo.deleteAccount())
+        assertEquals(1, auth.deleteCalls)
+        assertEquals(1, auth.signOutCalls)
+        assertNull(auth.uid.value)
+    }
+
+    @Test
+    fun `로그인 전이면 deleteAccount 는 아무것도 안 하고 null`() = runTest {
+        auth.uid.value = null
+        val repo = repo(StandardTestDispatcher(testScheduler))
+        assertNull(repo.deleteAccount())
+        assertTrue(nicknames.deleteCalls.isEmpty())
+    }
+
     private companion object {
         const val FIRST_RETRY_MS = 5_000L
     }
