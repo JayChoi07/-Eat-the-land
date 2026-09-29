@@ -6,8 +6,10 @@ import com.jaychoi.eattheland.core.network.FirebaseAuthDataSource
 import com.jaychoi.eattheland.core.network.FirestoreCellDataSource
 import com.jaychoi.eattheland.core.network.FirestoreNicknameDataSource
 import com.jaychoi.eattheland.core.network.FirestoreUserDataSource
+import com.jaychoi.eattheland.core.network.FirestoreWalkDataSource
 import com.jaychoi.eattheland.core.network.NicknameDataSource
 import com.jaychoi.eattheland.core.network.UserDataSource
+import com.jaychoi.eattheland.core.network.WalkDataSource
 import dagger.Binds
 import dagger.Module
 import dagger.hilt.InstallIn
@@ -23,4 +25,6 @@ interface NetworkModule {
     @Binds fun bindNickname(impl: FirestoreNicknameDataSource): NicknameDataSource
 
     @Binds fun bindCell(impl: FirestoreCellDataSource): CellDataSource
+
+    @Binds fun bindWalk(impl: FirestoreWalkDataSource): WalkDataSource
 }

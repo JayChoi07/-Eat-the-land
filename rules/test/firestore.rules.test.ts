@@ -226,3 +226,36 @@ describe('cells', () => {
     await assertFails(greedy.commit());
   });
 });
+
+describe('walks', () => {
+  const walk = (over: Record<string, unknown> = {}) => ({
+    startedAt: Timestamp.fromMillis(Date.now() - 30 * 60_000), endedAt: Timestamp.now(),
+    cells: 3, meters: 1235, createdAt: serverTimestamp(), ...over,
+  });
+  test('본인 아래에 만들 수 있고 본인만 읽는다', async () => {
+    await assertSucceeds(setDoc(doc(alice(), 'walks/alice/items/w1'), walk()));
+    await assertSucceeds(getDoc(doc(alice(), 'walks/alice/items/w1')));
+    await assertFails(getDoc(doc(bob(), 'walks/alice/items/w1')));
+  });
+  test('타인 아래·비로그인·여분 필드·클라 createdAt 은 거부', async () => {
+    await assertFails(setDoc(doc(bob(), 'walks/alice/items/w2'), walk()));
+    await assertFails(setDoc(doc(anon(), 'walks/alice/items/w2'), walk()));
+    await assertFails(setDoc(doc(alice(), 'walks/alice/items/w2'), walk({ extra: 1 })));
+    await assertFails(setDoc(doc(alice(), 'walks/alice/items/w2'), walk({ createdAt: Timestamp.now() })));
+  });
+  test('endedAt < startedAt, 5분 넘는 미래, 음수·비정수 칸·미터는 거부', async () => {
+    const past = Timestamp.fromMillis(Date.now() - 60 * 60_000);
+    await assertFails(setDoc(doc(alice(), 'walks/alice/items/w3'), walk({ startedAt: Timestamp.now(), endedAt: past })));
+    await assertFails(setDoc(doc(alice(), 'walks/alice/items/w3'), walk({
+      endedAt: Timestamp.fromMillis(Date.now() + 10 * 60_000),
+    })));
+    await assertFails(setDoc(doc(alice(), 'walks/alice/items/w3'), walk({ cells: -1 })));
+    await assertFails(setDoc(doc(alice(), 'walks/alice/items/w3'), walk({ meters: 12.5 })));
+    await assertSucceeds(setDoc(doc(alice(), 'walks/alice/items/w3'), walk({ cells: 0, meters: 0 })));
+  });
+  test('수정·삭제는 거부', async () => {
+    await assertSucceeds(setDoc(doc(alice(), 'walks/alice/items/w4'), walk()));
+    await assertFails(updateDoc(doc(alice(), 'walks/alice/items/w4'), { cells: 4 }));
+    await assertFails(deleteDoc(doc(alice(), 'walks/alice/items/w4')));
+  });
+});

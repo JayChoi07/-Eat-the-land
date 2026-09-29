@@ -10,6 +10,7 @@ import com.jaychoi.eattheland.core.testing.FakeHexGrid
 import com.jaychoi.eattheland.core.testing.FakeLocationRepository
 import com.jaychoi.eattheland.core.testing.FakeTerritoryRepository
 import com.jaychoi.eattheland.core.testing.FakeTrackingRepository
+import com.jaychoi.eattheland.core.testing.FakeWalkRepository
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.flowOf
@@ -28,8 +29,15 @@ class WalkTrackerTest {
     private val territory = FakeTerritoryRepository()
     private val tracking = FakeTrackingRepository()
     private val grid = FakeHexGrid()
-    private val tracker =
-        WalkTracker(locations, territory, tracking, CaptureCellUseCase(), grid, Clock { 0L })
+    private val walks = FakeWalkRepository()
+    private val tracker = WalkTracker(
+        locations,
+        territory,
+        tracking,
+        CaptureCellUseCase(),
+        grid,
+        WalkSession(tracking, walks, Clock { 0L }),
+    )
 
     private val a = LatLngPoint(37.5661, 126.9780)
     private val b = LatLngPoint(37.5679, 126.9780) // a 에서 북쪽 약 200 m, 다른 셀
@@ -219,5 +227,24 @@ class WalkTrackerTest {
         assertTrue(tracking.distanceCalls.isEmpty())
         emitAll(fix(c))
         assertEquals(1, tracking.distanceCalls.size)
+    }
+
+    @Test
+    fun `종료 시 요약을 저장하고, 실패해도 예외가 새지 않는다`() = runTest {
+        walks.result = false
+        locations.updatesOverride = flowOf(LocationUpdate.Unavailable)
+        tracker.run()
+        assertEquals(1, walks.saved.size)
+        assertEquals(false, tracking.state.value.isTracking)
+    }
+
+    @Test
+    fun `취소돼도 요약을 저장한다`() = runTest {
+        val job = start()
+        emitAll(fix(a), fix(a))
+        job.cancel()
+        runCurrent()
+        assertEquals(1, walks.saved.size)
+        assertEquals(1, walks.saved.single().cells)
     }
 }

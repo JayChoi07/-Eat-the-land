@@ -1,6 +1,5 @@
 package com.jaychoi.eattheland.tracking
 
-import com.jaychoi.eattheland.core.common.Clock
 import com.jaychoi.eattheland.core.common.grid.HexGrid
 import com.jaychoi.eattheland.core.data.TerritoryRepository
 import com.jaychoi.eattheland.core.data.location.LocationRepository
@@ -29,10 +28,10 @@ class WalkTracker @Inject constructor(
     private val tracking: TrackingRepository,
     private val captureCell: CaptureCellUseCase,
     private val grid: HexGrid,
-    private val clock: Clock,
+    private val session: WalkSession,
 ) {
     suspend fun run() {
-        tracking.onWalkStarted(clock.nowMillis())
+        session.start()
         try {
             coroutineScope {
                 // 지난 산책의 오프라인 큐. 트랜잭션이 오프라인 판정에 시간이 걸릴 수 있어 위치 수집과 나란히 돈다.
@@ -41,7 +40,7 @@ class WalkTracker @Inject constructor(
                 locations.updates().collect { update -> context = handle(update, context) }
             }
         } finally {
-            tracking.onWalkStopped(clock.nowMillis())
+            session.finish()
         }
     }
 

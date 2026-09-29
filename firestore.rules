@@ -77,5 +77,19 @@ service cloud.firestore {
         && request.resource.data.walkedAt <= request.time + duration.value(5, 'm');
       allow delete: if false;
     }
+
+    // 산책 이력(스펙 C §8). 본인만 만들고 읽는다. 시각은 클라(밟은 시각과 같은 5분 여유), createdAt 만 서버.
+    match /walks/{uid}/items/{walkId} {
+      allow read: if isOwner(uid);
+      allow create: if isOwner(uid)
+        && request.resource.data.keys().hasOnly(['startedAt','endedAt','cells','meters','createdAt'])
+        && request.resource.data.startedAt is timestamp && request.resource.data.endedAt is timestamp
+        && request.resource.data.endedAt >= request.resource.data.startedAt
+        && request.resource.data.endedAt <= request.time + duration.value(5, 'm')
+        && request.resource.data.cells is int && request.resource.data.cells >= 0
+        && request.resource.data.meters is int && request.resource.data.meters >= 0
+        && request.resource.data.createdAt == request.time;
+      allow update, delete: if false;
+    }
   }
 }

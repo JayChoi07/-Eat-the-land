@@ -12,6 +12,8 @@ import com.jaychoi.eattheland.core.data.sync.PendingCaptureScheduler
 import com.jaychoi.eattheland.core.data.sync.WorkManagerPendingCaptureScheduler
 import com.jaychoi.eattheland.core.data.tracking.DefaultTrackingRepository
 import com.jaychoi.eattheland.core.data.tracking.TrackingRepository
+import com.jaychoi.eattheland.core.data.walk.DefaultWalkRepository
+import com.jaychoi.eattheland.core.data.walk.WalkRepository
 import dagger.Binds
 import dagger.Module
 import dagger.hilt.InstallIn
@@ -33,4 +35,6 @@ interface DataModule {
     @Binds fun bindTrackingRepository(impl: DefaultTrackingRepository): TrackingRepository
 
     @Binds fun bindRankingRepository(impl: DefaultRankingRepository): RankingRepository
+
+    @Binds fun bindWalkRepository(impl: DefaultWalkRepository): WalkRepository
 }
