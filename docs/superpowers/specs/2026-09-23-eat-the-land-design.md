@@ -46,11 +46,12 @@ android-standards 팩 그린필드 규칙 적용 (멀티모듈·Nav3 1.1.7·Hilt
 ### 모듈 그래프
 
 ```
-:app                 앱 셸, Nav3 백스택, LocationTrackingService(FGS), Firebase·카카오맵 초기화(App Startup), BuildConfig(KAKAO_NATIVE_APP_KEY)
-:core:common         @IoDispatcher/@DefaultDispatcher, HexGrid(H3 래퍼)
-:core:model          CellId, LatLngPoint, Cell, Player, PlayerError 등 순수 Kotlin
-:core:network        Firebase Auth/Firestore 데이터소스 (DTO ↔ model 매핑, Firebase 예외 → DataSourceException)
-:core:data           Repository 인터페이스+구현: PlayerRepository, TerritoryRepository, LocationRepository, TrackingRepository, RankingRepository
+:app                 앱 셸, Nav3 백스택, LocationTrackingService(FGS, @EntryPoint) + WalkTracker(위치→판정→캡처→상태), Firebase·카카오맵 초기화(App Startup), BuildConfig(KAKAO_NATIVE_APP_KEY)
+:core:common         @IoDispatcher/@DefaultDispatcher, Clock, HexGrid(H3 래퍼)
+:core:model          CellId, LatLngPoint, Cell, Player, PlayerError, LocationSample/LocationUpdate, CaptureDecision/CaptureResult, TrackingState 등 순수 Kotlin
+:core:network        Firebase Auth/Firestore 데이터소스 (DTO ↔ model 매핑, Firebase 예외 → DataSourceException, capture 트랜잭션)
+:core:datastore      오프라인 캡처 큐(Preferences DataStore, stringSet 하나) — 플랜 B 에서 추가
+:core:data           Repository 인터페이스+구현: PlayerRepository, TerritoryRepository(capture·pendingCount·flushPending), LocationRepository(FusedLocation, `location/` 패키지 — 위치 제공자는 전용 모듈 유형이 없어 여기), TrackingRepository(인메모리 산책 상태), RankingRepository(플랜 C). `sync/`: PendingCaptureQueue(300칸·24시간 정책) + WorkManager PendingCaptureWorker(연결 복구 시 재전송)
 :core:domain         ValidateNicknameUseCase, CaptureCellUseCase (순수 JVM)
 :core:designsystem   AppTheme, Color/Type/Shape, TerritoryPalette, 공통 컴포넌트
 :core:testing        MainDispatcherRule, FakeHexGrid, Fake*DataSource, Fake*Repository
@@ -60,7 +61,7 @@ android-standards 팩 그린필드 규칙 적용 (멀티모듈·Nav3 1.1.7·Hilt
 :feature:settings    닉네임 변경, 계정 삭제
 ```
 
-만들지 않는 모듈: `:core:database`(Firestore 오프라인 캐시), `:core:datastore`(온보딩 완료 = `users/{uid}` 존재), `:core:ui`(둘 이상 feature가 공유할 때).
+만들지 않는 모듈: `:core:database`(Firestore 오프라인 캐시), `:core:ui`(둘 이상 feature가 공유할 때). `:core:datastore` 는 처음엔 안 만들 계획이었으나(온보딩 완료 = `users/{uid}` 존재) 오프라인 캡처 큐가 생겨 플랜 B 에서 열었다.
 
 ### 네트워크 계층 예외 규약
 `:core:network`의 데이터소스는 Firebase 예외를 잡아 `DataSourceException(kind)`로 바꿔 던진다. `kind ∈ { NicknameTaken, Offline, PermissionDenied, Unknown }`. `:core:data`는 이 예외만 알고 `PlayerError` 등 도메인 에러로 바꾼다 — **`:core:data`는 Firebase 타입을 import 하지 않는다.**
@@ -77,15 +78,17 @@ android-standards 팩 그린필드 규칙 적용 (멀티모듈·Nav3 1.1.7·Hilt
 
 ### UseCase (`:core:domain`)
 - `ValidateNicknameUseCase(nickname): Boolean` — `^[가-힣a-zA-Z0-9]{2,12}$`, 온보딩·설정 공유 (R-16-07)
-- `CaptureCellUseCase(sample, lastCell): CaptureDecision` — 정확도 ≤ 50 m, 속도 ≤ 20 km/h, 같은 셀 반복 컷 (플랜 B)
+- `CaptureCellUseCase(sample, currentCell, lastCell): CaptureDecision` — mock → 정확도 ≤ 50 m → 속도 ≤ 20 km/h(미상이면 통과) → 같은 셀 반복 컷 순. 셀 계산은 H3(Android 라이브러리)라 순수 JVM 모듈에서 못 하므로 호출자가 넘긴다
 
 ### 상태 아키텍처
 R-12-02 매트릭스 — Map 화면 "상태별 허용 이벤트 다름"(Idle↔Tracking) 1개 → **MVVM-UDF**. 나머지 0개 → MVVM-UDF.
 
 ### 위치 추적 서비스 (`:app`, 플랜 B)
-- FGS `foregroundServiceType="location"`, `START_STICKY`, `@EntryPoint`로 의존 획득
-- 캡처는 Firestore 트랜잭션(온라인 필요). 오프라인 중 캡처는 로컬 큐(DataStore)에 쌓았다 복구 시 재생 — 플랜 B에서 설계
-- 팩 R-14-03 위반(Service 진입점) 보고 예정
+- FGS `foregroundServiceType="location"`, `START_STICKY`, `@EntryPoint`로 의존 획득. sticky 재시작(`intent == null`)은 Android 14+ 가 백그라운드 위치 FGS 시작을 금지하므로 즉시 `stopSelf()`
+- 위치: FusedLocation 5초·10 m·HIGH_ACCURACY. 위치를 못 구하면(권한 회수·GPS 꺼짐) `LocationUpdate.Unavailable` → "GPS 신호가 약해요"
+- 캡처는 Firestore 트랜잭션(온라인 필요). 오프라인(`UNAVAILABLE`)이면 로컬 큐(`:core:datastore`)에 넣는다 — 최대 300칸(초과 시 가장 오래된 것 폐기), 24시간 지나면 폐기, 같은 셀은 하나. 연결이 돌아오면 WorkManager(`NetworkType.CONNECTED`)가 앱이 꺼져 있어도 오래된 순으로 재전송한다. 재전송은 그 사이 남이 가져간 칸도 다시 뺏는다. 산책을 시작할 때도 한 번 비운다 (사용자 결정 2026-09-29)
+- 알림: 채널 "산책 추적", "산책 중 · 이번 산책 N칸", 액션 "종료". 이번 산책 칸 수는 캡처 + 큐 항목(이미 내 셀은 제외)
+- 팩 R-14-03 위반(Service 진입점) — 플랜 B 표준 준수 보고에 기록
 
 ### 권한
 `ACCESS_FINE_LOCATION`, `ACCESS_COARSE_LOCATION`, `FOREGROUND_SERVICE`, `FOREGROUND_SERVICE_LOCATION`, `POST_NOTIFICATIONS`. `ACCESS_BACKGROUND_LOCATION` 선언 안 함.
@@ -180,7 +183,7 @@ service cloud.firestore {
 
 ### 클라 트랜잭션
 - **setNickname(nickname)**: 트랜잭션 — `nicknames/{lower}` 읽기(있고 uid≠나 → `NicknameTaken`), `users/{uid}` 읽기 → 있으면 옛 `nicknames/{old}` 삭제 + users 갱신, 없으면 users 생성(색 배정) → `nicknames/{lower}` 생성(이미 내 예약이면 생략 — 같은 닉네임 재제출은 성공). 경합으로 규칙에 걸리면 `PERMISSION_DENIED` → `NicknameTaken`으로 매핑
-- **capture** (플랜 B): 트랜잭션 — `cells/{id}` 읽기 → 이전 소유자 `cellCount -1`, 나 `+1`, cells 갱신
+- **capture**: 트랜잭션 — `cells/{id}` 읽기 → 이미 내 셀이면 쓰지 않음(AlreadyMine) → 나·이전 소유자 프로필 읽기 → cells set, 나 `cellCount +1`, 이전 소유자 `-1`(프로필이 없거나 0이면 생략 — 규칙이 음수를 거부). 색은 프로필과 같은 `uid.hashCode() mod 7`
 - **deleteAccount** (플랜 C): `users/{uid}`·`nicknames/{lower}` 를 **한 배치로** 삭제(규칙이 짝을 강제) → `FirebaseUser.delete()`. 셀은 남고(소유자 문서 없음) 뺏을 수 있음
 
 ### 알려진 한계 (카드 등록 후 Functions로 승격)
@@ -196,7 +199,7 @@ service cloud.firestore {
 | 화면 | NavKey | 내용 |
 |---|---|---|
 | Onboarding | `OnboardingKey` | 소개 → 위치·알림 권한 → 닉네임(2~12자, 중복 검사). 완료 조건 = `users/{uid}` 존재. "기기를 바꾸면 기록이 사라져요" 안내 |
-| Map (시작) | `MapKey` | 카카오맵 + 셀 폴리곤 오버레이 + 상단 칩(닉네임·셀 수) + (플랜 B) 하단 CTA "산책 시작/종료" + (플랜 C) 랭킹·설정 아이콘 |
+| Map (시작) | `MapKey` | 카카오맵 + 셀 폴리곤 오버레이 + 상단 칩(닉네임·셀 수, 산책 중이면 "이번 산책 N칸", 대기 있으면 "전송 대기 N칸", 정확도 나쁘면 "GPS 신호가 약해요") + 하단 CTA "산책 시작/종료" + 내 위치 점(primary) + "내 위치" 버튼 + (플랜 C) 랭킹·설정 아이콘. 지도를 열 때 권한이 있으면 마지막 위치로 이동, 산책 중 카메라가 따라감, 손으로 움직이면 따라가기 해제·"내 위치" 로 복귀. 권한 없이 "산책 시작" → 요청 → 거부 시 "산책하려면 위치 권한이 필요해요" + "설정 열기". 산책 시작/종료는 `:app` 콜백(`mapEntry(onStartWalk, onStopWalk)`) |
 | Ranking | `RankingKey` | 상위 100 + 내 순위 (플랜 C) |
 | Settings | `SettingsKey` | 닉네임 변경, 계정 삭제, 버전, 라이선스 (플랜 C) |
 
@@ -240,11 +243,11 @@ service cloud.firestore {
 
 | 층 | 대상 | 도구 |
 |---|---|---|
-| 단위 | UseCase 2개, Repository(fake 데이터소스), ViewModel 4개, DTO 매핑 | JUnit4, coroutines-test, turbine |
+| 단위 | UseCase 2개, Repository(fake 데이터소스)·PendingCaptureQueue·DataStore 데이터소스·Location 매핑(Robolectric), WalkTracker, ViewModel 4개, DTO 매핑 | JUnit4, coroutines-test, turbine, Robolectric |
 | 아키텍처 | 팩 Konsist | Konsist |
 | 스크린샷 | 화면마다 골든 (`@Config(sdk=[35])`), 지도는 슬롯으로 비움 | Roborazzi |
 | 서버 | **보안 규칙** — users/nicknames/cells 허용·거부 케이스 | `@firebase/rules-unit-testing` + Firestore 에뮬레이터 + Jest |
-| 수동 | 실기기: 온보딩·지도 오버레이·(B) 산책·뺏기 2대 | — |
+| 수동 | 실기기 1대: 온보딩·지도 오버레이·(B) 산책 캡처·시드 셀 뺏기·오프라인 큐(비행기 모드)·화면 꺼짐 추적 | — |
 
 ## 9. CI/CD
 

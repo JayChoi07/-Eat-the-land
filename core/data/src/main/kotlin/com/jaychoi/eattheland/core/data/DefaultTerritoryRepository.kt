@@ -12,9 +12,11 @@ import com.jaychoi.eattheland.core.network.DataSourceException
 import com.jaychoi.eattheland.core.network.toDomain
 import javax.inject.Inject
 import kotlin.coroutines.cancellation.CancellationException
+import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.withTimeout
 
 class DefaultTerritoryRepository @Inject constructor(
     private val cells: CellDataSource,
@@ -53,14 +55,20 @@ class DefaultTerritoryRepository @Inject constructor(
     }
 
     // R-23-05: 데이터소스 예외를 여기서 도메인 결과로 바꾼다. 색은 프로필과 같은 규칙(colorFor).
+    // Firestore 트랜잭션은 오프라인에서 실패하지 않고 연결을 기다린다(실기기 확인) — 시간이 지나면 오프라인으로 본다.
+    // 취소된 트랜잭션이 나중에 커밋돼도 재전송은 AlreadyMine 이라 두 번 세지 않는다.
     @Suppress("TooGenericExceptionCaught")
     private suspend fun tryCapture(cell: CellId): CaptureResult {
         val uid = auth.uid.first() ?: return CaptureResult.Failed(null)
         return try {
-            when (cells.capture(cell.value, grid.regionOf(cell).value, uid, colorFor(uid))) {
-                CaptureOutcome.Captured -> CaptureResult.Captured
-                CaptureOutcome.AlreadyMine -> CaptureResult.AlreadyMine
+            withTimeout(CAPTURE_TIMEOUT_MS) {
+                when (cells.capture(cell.value, grid.regionOf(cell).value, uid, colorFor(uid))) {
+                    CaptureOutcome.Captured -> CaptureResult.Captured
+                    CaptureOutcome.AlreadyMine -> CaptureResult.AlreadyMine
+                }
             }
+        } catch (e: TimeoutCancellationException) {
+            CaptureResult.Failed(DataSourceException(DataSourceException.Kind.Offline, e))
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -77,4 +85,8 @@ class DefaultTerritoryRepository @Inject constructor(
     // 검사 없이 넘기면 HexGrid 가 예외를 던져 같은 지역을 보는 모든 사용자의 앱이 죽는다.
     private fun isOnGrid(cell: Cell): Boolean =
         grid.isValidCell(cell.id) && grid.regionOf(cell.id) == cell.region
+
+    private companion object {
+        const val CAPTURE_TIMEOUT_MS = 10_000L
+    }
 }

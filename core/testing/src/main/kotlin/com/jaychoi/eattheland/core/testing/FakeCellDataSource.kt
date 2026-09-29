@@ -4,6 +4,7 @@ import com.jaychoi.eattheland.core.network.CaptureOutcome
 import com.jaychoi.eattheland.core.network.CellDataSource
 import com.jaychoi.eattheland.core.network.CellDto
 import com.jaychoi.eattheland.core.network.DataSourceException
+import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.emitAll
@@ -27,6 +28,9 @@ class FakeCellDataSource : CellDataSource {
     var captureError: DataSourceException? = null
     var captureOutcome: CaptureOutcome = CaptureOutcome.Captured
 
+    /** true 면 capture 가 끝나지 않는다(오프라인에서 연결을 기다리는 Firestore 트랜잭션 흉내). */
+    var captureHangs: Boolean = false
+
     override suspend fun capture(
         cellId: String,
         region: String,
@@ -34,6 +38,7 @@ class FakeCellDataSource : CellDataSource {
         color: Int,
     ): CaptureOutcome {
         captures += cellId
+        if (captureHangs) awaitCancellation()
         captureError?.let { throw it }
         // 관찰 중인 지도가 fake 에서도 새 셀을 받게 한다.
         docs.value = docs.value +

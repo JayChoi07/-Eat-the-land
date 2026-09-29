@@ -20,6 +20,7 @@ import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.advanceTimeBy
+import kotlinx.coroutines.test.currentTime
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
@@ -129,6 +130,14 @@ class DefaultTerritoryRepositoryTest {
     }
 
     @Test
+    fun `트랜잭션이 10초 안에 끝나지 않으면(오프라인 대기) 큐에 넣고 Queued`() = runTest {
+        source.captureHangs = true
+        assertEquals(CaptureResult.Queued, repo.capture(cell))
+        assertEquals(listOf(cell.value), pendingSource.stored.value.map { it.cellId })
+        assertEquals(CAPTURE_TIMEOUT_MS, currentTime)
+    }
+
+    @Test
     fun `로그인 전이거나 권한 오류면 Failed 이고 큐에 넣지 않는다`() = runTest {
         auth.uid.value = null
         assertTrue(repo.capture(cell) is CaptureResult.Failed)
@@ -171,5 +180,6 @@ class DefaultTerritoryRepositoryTest {
 
     private companion object {
         const val FIRST_RETRY_MS = 5_000L
+        const val CAPTURE_TIMEOUT_MS = 10_000L
     }
 }
