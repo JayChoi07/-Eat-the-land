@@ -166,4 +166,58 @@ class WalkTrackerTest {
         runCurrent()
         assertEquals(false, tracking.state.value.isTracking)
     }
+
+    private val c = LatLngPoint(37.5697, 126.9780) // b 에서 북쪽 약 200 m
+
+    @Test
+    fun `판정을 통과한 fix 사이 거리를 더한다 - 첫 fix 는 기준만`() = runTest {
+        start()
+        emitAll(fix(a), fix(b), fix(c))
+        assertEquals(2, tracking.distanceCalls.size)
+        assertEquals(200.0, tracking.distanceCalls[0], 2.0)
+        assertEquals(200.0, tracking.distanceCalls[1], 2.0)
+        assertEquals(400.0, tracking.state.value.distanceMeters, 4.0)
+    }
+
+    @Test
+    fun `같은 셀 반복(SameCell)과 후보(Unconfirmed)도 통과라 거리를 더한다`() = runTest {
+        start()
+        emitAll(fix(a), fix(a)) // 캡처 → 다음 a 는 SameCell
+        emitAll(fix(a))
+        assertEquals(2, tracking.distanceCalls.size) // a→a 0 m 두 번
+        assertEquals(0.0, tracking.state.value.distanceMeters, 0.0)
+    }
+
+    @Test
+    fun `비통과 fix 가 끼면 그 앞뒤 거리는 더하지 않는다`() = runTest {
+        start()
+        emitAll(fix(a), fix(b, accuracy = 80f), fix(c))
+        // a→b(부정확) 안 더함, b→c 도 안 더함(기준이 c 로 새로 잡힘)
+        assertTrue(tracking.distanceCalls.isEmpty())
+        emitAll(fix(b))
+        assertEquals(1, tracking.distanceCalls.size) // c→b 만
+        assertEquals(200.0, tracking.distanceCalls[0], 2.0)
+    }
+
+    @Test
+    fun `속도 초과·mock 도 기준을 끊는다`() = runTest {
+        start()
+        emitAll(fix(a), fix(b, speed = 30f), fix(c))
+        assertTrue(tracking.distanceCalls.isEmpty())
+        emitAll(
+            fix(b),
+            LocationUpdate.Fix(LocationSample(c, 10f, 1.2f, elapsedMillis = 0L, isMock = true)),
+            fix(a),
+        )
+        assertEquals(1, tracking.distanceCalls.size) // c→b 만. mock 뒤 a 는 기준 리셋
+    }
+
+    @Test
+    fun `Unavailable 뒤 첫 fix 는 거리를 더하지 않는다`() = runTest {
+        start()
+        emitAll(fix(a), LocationUpdate.Unavailable, fix(b))
+        assertTrue(tracking.distanceCalls.isEmpty())
+        emitAll(fix(c))
+        assertEquals(1, tracking.distanceCalls.size)
+    }
 }

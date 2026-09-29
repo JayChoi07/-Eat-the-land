@@ -6,6 +6,7 @@ import com.jaychoi.eattheland.core.data.TerritoryRepository
 import com.jaychoi.eattheland.core.data.location.LocationRepository
 import com.jaychoi.eattheland.core.data.tracking.TrackingRepository
 import com.jaychoi.eattheland.core.domain.CaptureCellUseCase
+import com.jaychoi.eattheland.core.domain.distanceMeters
 import com.jaychoi.eattheland.core.model.CaptureDecision
 import com.jaychoi.eattheland.core.model.CaptureResult
 import com.jaychoi.eattheland.core.model.CellId
@@ -51,7 +52,7 @@ class WalkTracker @Inject constructor(
         // 관측이 끊겼다 — 후보와 속도 기준 fix 는 버리고(복구 뒤 한 번의 fix 로 칠하지 않게) 마지막 셀만 남긴다.
         LocationUpdate.Unavailable -> {
             tracking.onLocation(point = null, isGpsWeak = true)
-            context.copy(lastSample = null, candidateCell = null)
+            context.copy(lastSample = null, candidateCell = null, lastPassedSample = null)
         }
 
         is LocationUpdate.Fix -> handleFix(update.sample, context)
@@ -62,7 +63,10 @@ class WalkTracker @Inject constructor(
         val decision = captureCell(sample, cell, context)
         val inaccurate = (decision as? CaptureDecision.Skip)?.reason == SkipReason.Inaccurate
         tracking.onLocation(sample.point, isGpsWeak = inaccurate)
-        val next = context.copy(lastSample = sample)
+        val next = context.copy(
+            lastSample = sample,
+            lastPassedSample = passedSample(decision, sample, context),
+        )
         return when (decision) {
             CaptureDecision.Capture -> next.afterCapture(cell)
 
@@ -72,6 +76,24 @@ class WalkTracker @Inject constructor(
             // 연속이 끊겼다(같은 셀 반복·정확도·속도·mock).
             is CaptureDecision.Skip -> next.copy(candidateCell = null)
         }
+    }
+
+    // 거리(스펙 C 결정 4): 게이트(정확도·속도·mock)를 통과한 fix 사이만 더한다. 비통과 뒤 첫 통과 fix 는 기준만 잡는다.
+    private fun passedSample(
+        decision: CaptureDecision,
+        sample: LocationSample,
+        context: WalkContext,
+    ): LocationSample? {
+        if (!decision.passedGate()) return null
+        context.lastPassedSample?.let { previous ->
+            tracking.onDistance(distanceMeters(previous.point, sample.point))
+        }
+        return sample
+    }
+
+    private fun CaptureDecision.passedGate(): Boolean = when (this) {
+        CaptureDecision.Capture -> true
+        is CaptureDecision.Skip -> reason == SkipReason.SameCell || reason == SkipReason.Unconfirmed
     }
 
     private suspend fun WalkContext.afterCapture(cell: CellId): WalkContext =
