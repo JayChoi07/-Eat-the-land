@@ -1,5 +1,6 @@
 package com.jaychoi.eattheland.core.data
 
+import com.jaychoi.eattheland.core.common.Clock
 import com.jaychoi.eattheland.core.common.grid.HexGrid
 import com.jaychoi.eattheland.core.data.sync.PendingCaptureQueue
 import com.jaychoi.eattheland.core.model.CaptureResult
@@ -7,6 +8,7 @@ import com.jaychoi.eattheland.core.model.Cell
 import com.jaychoi.eattheland.core.model.CellId
 import com.jaychoi.eattheland.core.network.AuthDataSource
 import com.jaychoi.eattheland.core.network.CaptureOutcome
+import com.jaychoi.eattheland.core.network.CaptureRequest
 import com.jaychoi.eattheland.core.network.CellDataSource
 import com.jaychoi.eattheland.core.network.DataSourceException
 import com.jaychoi.eattheland.core.network.toDomain
@@ -25,6 +27,7 @@ class DefaultTerritoryRepository @Inject constructor(
     private val grid: HexGrid,
     private val auth: AuthDataSource,
     private val queue: PendingCaptureQueue,
+    private val clock: Clock,
 ) : TerritoryRepository {
     // 리스너 오류는 지도 화면을 죽이지 않고 다시 구독한다.
     override fun observeCells(regions: Set<CellId>): Flow<List<Cell>> =
@@ -36,7 +39,7 @@ class DefaultTerritoryRepository @Inject constructor(
 
     override suspend fun capture(cell: CellId): CaptureResult {
         val result = try {
-            tryCapture(cell)
+            tryCapture(cell, walkedAtMillis = clock.nowMillis())
         } catch (e: CancellationException) {
             // 산책 종료(서비스 취소)로 끊긴 캡처 의도는 남긴다. 트랜잭션이 이미 커밋됐다면 재전송이 AlreadyMine 을 받는다.
             withContext(NonCancellable) { queue.enqueue(cell) }
@@ -53,7 +56,7 @@ class DefaultTerritoryRepository @Inject constructor(
         val pending = queue.snapshot()
         var remaining = pending.size
         for (item in pending) {
-            val result = tryCapture(item.cell)
+            val result = tryCapture(item.cell, walkedAtMillis = item.queuedAtMillis)
             // 오프라인이면 여기서 멈춘다 — WorkManager 가 연결 뒤 다시 부른다.
             if (result.isOffline()) break
             if (result.isSettled()) {
@@ -72,11 +75,18 @@ class DefaultTerritoryRepository @Inject constructor(
     // Firestore 트랜잭션은 오프라인에서 실패하지 않고 연결을 기다린다(실기기 확인) — 시간이 지나면 오프라인으로 본다.
     // 취소된 트랜잭션이 나중에 커밋돼도 재전송은 AlreadyMine 이라 두 번 세지 않는다.
     @Suppress("TooGenericExceptionCaught")
-    private suspend fun tryCapture(cell: CellId): CaptureResult {
+    private suspend fun tryCapture(cell: CellId, walkedAtMillis: Long): CaptureResult {
         val uid = auth.uid.first() ?: return CaptureResult.Failed(null)
+        val request = CaptureRequest(
+            cellId = cell.value,
+            region = grid.regionOf(cell).value,
+            uid = uid,
+            color = colorFor(uid),
+            walkedAtMillis = walkedAtMillis,
+        )
         return try {
             withTimeout(CAPTURE_TIMEOUT_MS) {
-                when (cells.capture(cell.value, grid.regionOf(cell).value, uid, colorFor(uid))) {
+                when (cells.capture(request)) {
                     CaptureOutcome.Captured -> CaptureResult.Captured
                     CaptureOutcome.AlreadyMine -> CaptureResult.AlreadyMine
                 }

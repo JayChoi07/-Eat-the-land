@@ -35,8 +35,9 @@ class DefaultTerritoryRepositoryTest {
     private val pendingSource = FakePendingCaptureDataSource()
     private val scheduler = FakePendingCaptureScheduler()
     private var now = 1_000L
-    private val queue = PendingCaptureQueue(pendingSource, scheduler, Clock { now })
-    private val repo = DefaultTerritoryRepository(source, grid, auth, queue)
+    private val clock = Clock { now }
+    private val queue = PendingCaptureQueue(pendingSource, scheduler, clock)
+    private val repo = DefaultTerritoryRepository(source, grid, auth, queue, clock)
 
     private val cell = grid.cellOf(LatLngPoint(37.5661, 126.9780))
     private val other = grid.cellOf(LatLngPoint(37.5679, 126.9780))
@@ -108,10 +109,24 @@ class DefaultTerritoryRepositoryTest {
     }
 
     @Test
-    fun `capture 는 내 uid·색·region 으로 데이터소스를 부르고 Captured`() = runTest {
+    fun `capture 는 내 uid·색·region·지금 시각(walkedAt)으로 데이터소스를 부르고 Captured`() = runTest {
+        now = 123_456L
         assertEquals(CaptureResult.Captured, repo.capture(cell))
-        assertEquals(listOf(cell.value), source.captures)
+        val request = source.requests.single()
+        assertEquals(cell.value, request.cellId)
+        assertEquals(region.value, request.region)
+        assertEquals("u1", request.uid)
+        assertEquals(colorFor("u1"), request.color)
+        assertEquals(123_456L, request.walkedAtMillis)
         assertEquals(0, scheduler.scheduled)
+    }
+
+    @Test
+    fun `flushPending 은 큐에 넣은 시각을 walkedAt 으로 보낸다`() = runTest {
+        now = 9_000_000L
+        pendingSource.stored.value = listOf(PendingCapture(cell.value, 100L))
+        assertEquals(0, repo.flushPending())
+        assertEquals(listOf(100L), source.requests.map { it.walkedAtMillis })
     }
 
     @Test

@@ -8,6 +8,8 @@ data class CellDto(
     val ownerUid: String? = null,
     val ownerColor: Long? = null,
     val capturedAt: Timestamp? = null,
+    /** 클라가 밟은 시각(v3). 지금은 쓰기만 하고 읽어서 쓰지 않는다 — 필드가 없으면 Firestore 가 매핑 경고를 찍는다. */
+    val walkedAt: Timestamp? = null,
     val region: String? = null,
 )
 

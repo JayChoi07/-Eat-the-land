@@ -1,6 +1,7 @@
 package com.jaychoi.eattheland.core.testing
 
 import com.jaychoi.eattheland.core.network.CaptureOutcome
+import com.jaychoi.eattheland.core.network.CaptureRequest
 import com.jaychoi.eattheland.core.network.CellDataSource
 import com.jaychoi.eattheland.core.network.CellDto
 import com.jaychoi.eattheland.core.network.DataSourceException
@@ -24,7 +25,8 @@ class FakeCellDataSource : CellDataSource {
     /** true 면 오류 전에 현재 값을 한 번 낸다(잘 받다가 리스너가 끊기는 경우). */
     var emitBeforeError: Boolean = false
 
-    val captures = mutableListOf<String>()
+    val requests = mutableListOf<CaptureRequest>()
+    val captures: List<String> get() = requests.map { it.cellId }
     var captureError: DataSourceException? = null
     var captureOutcome: CaptureOutcome = CaptureOutcome.Captured
 
@@ -34,13 +36,8 @@ class FakeCellDataSource : CellDataSource {
     /** 다음 한 번의 capture 만 이 예외로 실패한다. */
     var captureErrorOnce: DataSourceException? = null
 
-    override suspend fun capture(
-        cellId: String,
-        region: String,
-        uid: String,
-        color: Int,
-    ): CaptureOutcome {
-        captures += cellId
+    override suspend fun capture(request: CaptureRequest): CaptureOutcome {
+        requests += request
         if (captureHangs) awaitCancellation()
         captureErrorOnce?.let {
             captureErrorOnce = null
@@ -48,8 +45,12 @@ class FakeCellDataSource : CellDataSource {
         }
         captureError?.let { throw it }
         // 관찰 중인 지도가 fake 에서도 새 셀을 받게 한다.
-        docs.value = docs.value +
-            (cellId to CellDto(ownerUid = uid, ownerColor = color.toLong(), region = region))
+        val dto = CellDto(
+            ownerUid = request.uid,
+            ownerColor = request.color.toLong(),
+            region = request.region,
+        )
+        docs.value = docs.value + (request.cellId to dto)
         return captureOutcome
     }
 
