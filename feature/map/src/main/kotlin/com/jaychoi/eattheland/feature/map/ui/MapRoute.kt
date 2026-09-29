@@ -2,10 +2,7 @@ package com.jaychoi.eattheland.feature.map.ui
 
 import android.Manifest
 import android.content.Context
-import android.content.Intent
 import android.content.pm.PackageManager
-import android.net.Uri
-import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.material3.MaterialTheme
@@ -19,6 +16,7 @@ import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation3.runtime.EntryProviderScope
 import androidx.navigation3.runtime.NavKey
+import com.jaychoi.eattheland.core.common.intent.openAppSettings
 import com.jaychoi.eattheland.core.designsystem.theme.TerritoryPalette
 import com.jaychoi.eattheland.core.model.LatLngPoint
 
@@ -110,12 +108,3 @@ private fun locationPermissions(): Array<String> = arrayOf(
 /** FGS location 타입은 coarse 만 있어도 시작할 수 있다. */
 private fun Context.hasLocationPermission(): Boolean =
     locationPermissions().any { checkSelfPermission(it) == PackageManager.PERMISSION_GRANTED }
-
-private fun Context.openAppSettings() {
-    startActivity(
-        Intent(
-            Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
-            Uri.fromParts("package", packageName, null),
-        ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
-    )
-}

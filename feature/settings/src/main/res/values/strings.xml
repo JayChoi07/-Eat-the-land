@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="settings_title">설정</string>
+    <string name="settings_back">뒤로</string>
+    <string name="settings_section_account">계정</string>
+    <string name="settings_nickname">닉네임</string>
+    <string name="settings_nickname_hint">한글·영문·숫자 2~12자</string>
+    <string name="settings_save">저장</string>
+    <string name="settings_cancel">취소</string>
+    <string name="settings_account_notice">계정은 이 기기에만 저장돼요. 앱을 삭제하거나 기기를 바꾸면 기록이 사라져요.</string>
+    <string name="settings_delete_account">계정 삭제</string>
+    <string name="settings_delete_confirm_title">계정을 삭제할까요?</string>
+    <string name="settings_delete_confirm_body">칸 %1$d개와 닉네임이 사라져요. 되돌릴 수 없어요.</string>
+    <string name="settings_delete">삭제</string>
+    <string name="settings_section_permissions">권한</string>
+    <string name="settings_permission_location">위치</string>
+    <string name="settings_permission_notification">알림</string>
+    <string name="settings_permission_granted">허용됨</string>
+    <string name="settings_permission_denied">거부됨</string>
+    <string name="settings_open_system_settings">설정 열기</string>
+    <string name="settings_section_about">정보</string>
+    <string name="settings_version">버전</string>
+    <string name="settings_licenses">오픈소스 라이선스</string>
+    <string name="settings_error_network">네트워크 연결을 확인해 주세요</string>
+    <string name="settings_error_taken">이미 사용 중인 닉네임이에요</string>
+    <string name="settings_error_invalid">닉네임 형식이 맞지 않아요</string>
+    <string name="settings_error_unknown">잠시 후 다시 시도해 주세요</string>
+    <string name="licenses_title">오픈소스 라이선스</string>
+</resources>
