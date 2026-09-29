@@ -13,5 +13,6 @@ dependencies {
     implementation(projects.core.data)
     implementation(projects.core.designsystem)
     implementation(libs.kakao.maps)
+    implementation(libs.androidx.compose.material.icons.core) // 내 위치 버튼 아이콘
     testImplementation(projects.core.testing)
 }

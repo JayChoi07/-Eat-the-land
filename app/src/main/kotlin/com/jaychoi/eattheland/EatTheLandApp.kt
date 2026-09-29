@@ -9,6 +9,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.navigation3.rememberViewModelStoreNavEntryDecorator
@@ -22,6 +23,7 @@ import com.jaychoi.eattheland.feature.map.ui.MapKey
 import com.jaychoi.eattheland.feature.map.ui.mapEntry
 import com.jaychoi.eattheland.feature.onboarding.ui.OnboardingKey
 import com.jaychoi.eattheland.feature.onboarding.ui.onboardingEntry
+import com.jaychoi.eattheland.tracking.LocationTrackingService
 import com.jaychoi.eattheland.ui.AppRootViewModel
 
 /**
@@ -37,6 +39,7 @@ fun EatTheLandApp(
     viewModel: AppRootViewModel = hiltViewModel(),
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val context = LocalContext.current
     if (uiState.isLoading) return
 
     val startKey: NavKey = if (uiState.hasProfile) MapKey else OnboardingKey
@@ -63,7 +66,11 @@ fun EatTheLandApp(
             // when 분기가 아니라 entryProvider DSL 로 키→콘텐츠를 잇는다 (R-13-04).
             entryProvider = entryProvider {
                 onboardingEntry(onCompleted = { navigator.replaceAll(MapKey) })
-                mapEntry()
+                // 산책 추적은 :app 의 FGS. feature 는 시작/종료 콜백만 안다.
+                mapEntry(
+                    onStartWalk = { LocationTrackingService.start(context) },
+                    onStopWalk = { LocationTrackingService.stop(context) },
+                )
             },
         )
     }

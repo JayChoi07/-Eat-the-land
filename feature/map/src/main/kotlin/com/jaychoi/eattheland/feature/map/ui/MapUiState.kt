@@ -25,12 +25,30 @@ data class MapUiState(
     val mapLoadFailed: Boolean = false,
     val mapAttempt: Int = 0,
     val camera: CameraSnapshot? = null,
+    /** 산책 중이면 추적 위치, 아니면 지도를 열 때 읽은 마지막 위치. */
+    val myLocation: LatLngPoint? = null,
+    /** true 면 카메라가 myLocation 을 따라간다. 사용자가 지도를 움직이면 꺼진다. */
+    val isFollowing: Boolean = true,
+    val isTracking: Boolean = false,
+    val walkCellCount: Int = 0,
+    val pendingCount: Int = 0,
+    val isGpsWeak: Boolean = false,
+    /** "산책 시작" 을 눌렀는데 위치 권한을 거부한 뒤. */
+    val showPermissionNotice: Boolean = false,
 )
 
 sealed interface MapEvent {
-    data class CameraIdle(val center: LatLngPoint, val zoom: Float) : MapEvent
+    /** byUser = 손으로 움직임(GestureType ≠ Unknown). 프로그램 이동은 따라가기를 끄지 않는다. */
+    data class CameraIdle(val center: LatLngPoint, val zoom: Float, val byUser: Boolean) : MapEvent
 
     data object MapLoadFailed : MapEvent
 
     data object RetryMap : MapEvent
+
+    data object MyLocationClicked : MapEvent
+
+    /** requested = 권한 대화상자를 띄운 결과. false 면 화면을 열며 확인만 한 것. */
+    data class LocationPermission(val granted: Boolean, val requested: Boolean) : MapEvent
+
+    data object PermissionNoticeDismissed : MapEvent
 }

@@ -4,4 +4,13 @@
     <string name="map_stat_cells">%1$s · %2$d칸</string>
     <string name="map_load_failed">지도를 불러오지 못했어요</string>
     <string name="map_retry">다시 시도</string>
+    <string name="map_walk_start">산책 시작</string>
+    <string name="map_walk_stop">산책 종료</string>
+    <string name="map_walk_count">이번 산책 %1$d칸</string>
+    <string name="map_pending_count">전송 대기 %1$d칸</string>
+    <string name="map_gps_weak">GPS 신호가 약해요</string>
+    <string name="map_permission_notice">산책하려면 위치 권한이 필요해요</string>
+    <string name="map_open_settings">설정 열기</string>
+    <string name="map_dismiss">닫기</string>
+    <string name="map_my_location">내 위치</string>
 </resources>

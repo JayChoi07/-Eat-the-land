@@ -59,6 +59,8 @@ hilt-gradlePlugin = { group = "com.google.dagger", name = "hilt-android-gradle-p
 # --- Compose (버전은 BOM 이 결정) ---
 androidx-compose-bom = { group = "androidx.compose", name = "compose-bom", version.ref = "composeBom" }
 androidx-compose-material3 = { group = "androidx.compose.material3", name = "material3" }
+# Icons.Default.* (LocationOn 등). material3 가 전이 노출하지 않아 쓰는 모듈이 직접 선언한다.
+androidx-compose-material-icons-core = { group = "androidx.compose.material", name = "material-icons-core" }
 androidx-compose-ui-tooling = { group = "androidx.compose.ui", name = "ui-tooling" }
 androidx-compose-ui-tooling-preview = { group = "androidx.compose.ui", name = "ui-tooling-preview" }
 androidx-compose-ui-test-junit4 = { group = "androidx.compose.ui", name = "ui-test-junit4" }

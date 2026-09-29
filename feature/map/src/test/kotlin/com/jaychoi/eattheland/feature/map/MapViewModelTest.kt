@@ -6,8 +6,10 @@ import com.jaychoi.eattheland.core.model.Cell
 import com.jaychoi.eattheland.core.model.LatLngPoint
 import com.jaychoi.eattheland.core.model.Player
 import com.jaychoi.eattheland.core.testing.FakeHexGrid
+import com.jaychoi.eattheland.core.testing.FakeLocationRepository
 import com.jaychoi.eattheland.core.testing.FakePlayerRepository
 import com.jaychoi.eattheland.core.testing.FakeTerritoryRepository
+import com.jaychoi.eattheland.core.testing.FakeTrackingRepository
 import com.jaychoi.eattheland.core.testing.MainDispatcherRule
 import com.jaychoi.eattheland.feature.map.ui.CameraSnapshot
 import com.jaychoi.eattheland.feature.map.ui.MapEvent
@@ -28,9 +30,11 @@ class MapViewModelTest {
     private val territory = FakeTerritoryRepository()
     private val players = FakePlayerRepository()
     private val grid = FakeHexGrid()
+    private val tracking = FakeTrackingRepository()
+    private val locations = FakeLocationRepository()
     private val seoul = LatLngPoint(37.5661, 126.9780)
 
-    private fun viewModel() = MapViewModel(territory, players, grid)
+    private fun viewModel() = MapViewModel(territory, players, grid, tracking, locations)
 
     private fun seedTwoCells() {
         val mine = grid.cellOf(seoul)
@@ -50,7 +54,7 @@ class MapViewModelTest {
         val other = grid.cellOf(LatLngPoint(37.5679, 126.9780))
         val vm = viewModel()
         vm.uiState.test {
-            vm.onEvent(MapEvent.CameraIdle(seoul, zoom = 16f))
+            vm.onEvent(MapEvent.CameraIdle(seoul, zoom = 16f, byUser = false))
             val state = awaitItemUntil { it.cells.size == 2 }
             assertEquals(setOf(grid.regionOf(mine)), territory.requestedRegions.last())
             assertNull(state.cells.first { it.id == mine }.colorIndex)
@@ -64,7 +68,7 @@ class MapViewModelTest {
     fun `줌 14 미만이면 구독하지 않고 isZoomedOut`() = runTest {
         val vm = viewModel()
         vm.uiState.test {
-            vm.onEvent(MapEvent.CameraIdle(seoul, zoom = 13.9f))
+            vm.onEvent(MapEvent.CameraIdle(seoul, zoom = 13.9f, byUser = false))
             val state = awaitItemUntil { it.isZoomedOut }
             assertTrue(state.cells.isEmpty())
             assertTrue(territory.requestedRegions.isEmpty())
@@ -76,7 +80,7 @@ class MapViewModelTest {
     fun `줌이 정확히 14 면 구독한다`() = runTest {
         val vm = viewModel()
         vm.uiState.test {
-            vm.onEvent(MapEvent.CameraIdle(seoul, zoom = 14f))
+            vm.onEvent(MapEvent.CameraIdle(seoul, zoom = 14f, byUser = false))
             cancelAndIgnoreRemainingEvents()
         }
         assertEquals(1, territory.requestedRegions.size)
@@ -87,10 +91,10 @@ class MapViewModelTest {
         seedTwoCells()
         val vm = viewModel()
         vm.uiState.test {
-            vm.onEvent(MapEvent.CameraIdle(seoul, zoom = 16f))
+            vm.onEvent(MapEvent.CameraIdle(seoul, zoom = 16f, byUser = false))
             awaitItemUntil { it.cells.size == 2 }
             assertEquals(1, territory.cells.subscriptionCount.value)
-            vm.onEvent(MapEvent.CameraIdle(seoul, zoom = 13f))
+            vm.onEvent(MapEvent.CameraIdle(seoul, zoom = 13f, byUser = false))
             awaitItemUntil { it.isZoomedOut && it.cells.isEmpty() }
             assertEquals(0, territory.cells.subscriptionCount.value)
             cancelAndIgnoreRemainingEvents()
@@ -103,7 +107,7 @@ class MapViewModelTest {
         seedTwoCells()
         val vm = viewModel()
         vm.uiState.test {
-            vm.onEvent(MapEvent.CameraIdle(seoul, zoom = 16f))
+            vm.onEvent(MapEvent.CameraIdle(seoul, zoom = 16f, byUser = false))
             awaitItemUntil { it.cells.size == 2 }
             cancelAndIgnoreRemainingEvents()
         }
@@ -117,8 +121,10 @@ class MapViewModelTest {
     fun `같은 region 안에서 카메라가 움직이면 재구독하지 않는다`() = runTest {
         val vm = viewModel()
         vm.uiState.test {
-            vm.onEvent(MapEvent.CameraIdle(seoul, zoom = 16f))
-            vm.onEvent(MapEvent.CameraIdle(LatLngPoint(37.5662, 126.9781), zoom = 17f))
+            vm.onEvent(MapEvent.CameraIdle(seoul, zoom = 16f, byUser = false))
+            vm.onEvent(
+                MapEvent.CameraIdle(LatLngPoint(37.5662, 126.9781), zoom = 17f, byUser = false),
+            )
             cancelAndIgnoreRemainingEvents()
         }
         assertEquals(1, territory.requestedRegions.size)
@@ -142,9 +148,68 @@ class MapViewModelTest {
     fun `카메라가 멈춘 위치·줌을 기억한다`() = runTest {
         val vm = viewModel()
         vm.uiState.test {
-            vm.onEvent(MapEvent.CameraIdle(seoul, zoom = 15.7f))
+            vm.onEvent(MapEvent.CameraIdle(seoul, zoom = 15.7f, byUser = false))
             val state = awaitItemUntil { it.camera != null }
             assertEquals(CameraSnapshot(seoul, zoom = 15), state.camera)
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun `산책 상태·이번 산책 칸 수·GPS 약함·전송 대기가 UiState 에 비친다`() = runTest {
+        val vm = viewModel()
+        vm.uiState.test {
+            tracking.onWalkStarted()
+            tracking.onCaptured()
+            tracking.onLocation(seoul, isGpsWeak = true)
+            territory.pending.value = 2
+            val state = awaitItemUntil {
+                it.isTracking && it.walkCellCount == 1 && it.pendingCount == 2
+            }
+            assertTrue(state.isGpsWeak)
+            assertEquals(seoul, state.myLocation)
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun `권한이 있으면 마지막 위치를 내 위치로 두고 따라간다`() = runTest {
+        locations.lastKnownPoint = seoul
+        val vm = viewModel()
+        vm.uiState.test {
+            vm.onEvent(MapEvent.LocationPermission(granted = true, requested = false))
+            val state = awaitItemUntil { it.myLocation == seoul }
+            assertTrue(state.isFollowing)
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun `요청 뒤 거부면 안내를 띄우고 닫으면 사라진다 - 처음 확인만 한 거부는 안내 없음`() = runTest {
+        val vm = viewModel()
+        vm.uiState.test {
+            awaitItem()
+            vm.onEvent(MapEvent.LocationPermission(granted = false, requested = false))
+            expectNoEvents()
+            vm.onEvent(MapEvent.LocationPermission(granted = false, requested = true))
+            awaitItemUntil { it.showPermissionNotice }
+            vm.onEvent(MapEvent.PermissionNoticeDismissed)
+            awaitItemUntil { !it.showPermissionNotice }
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun `사용자가 지도를 움직이면 따라가기 해제, 내 위치 버튼으로 복귀`() = runTest {
+        val vm = viewModel()
+        vm.uiState.test {
+            assertTrue(awaitItem().isFollowing)
+            vm.onEvent(MapEvent.CameraIdle(seoul, zoom = 16f, byUser = true))
+            awaitItemUntil { !it.isFollowing }
+            vm.onEvent(MapEvent.CameraIdle(seoul, zoom = 16f, byUser = false)) // 프로그램 이동은 유지
+            expectNoEvents()
+            vm.onEvent(MapEvent.MyLocationClicked)
+            awaitItemUntil { it.isFollowing }
             cancelAndIgnoreRemainingEvents()
         }
     }

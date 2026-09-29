@@ -28,7 +28,7 @@ class MapScreenshotTest {
     private fun capture(state: MapUiState) {
         composeRule.setContent {
             AppTheme {
-                MapScreen(state, onEvent = {}) {
+                MapScreen(state, onEvent = {}, onWalkToggle = {}, onOpenSettings = {}) {
                     Box(
                         Modifier.fillMaxSize().background(
                             MaterialTheme.colorScheme.surfaceContainer,
@@ -48,5 +48,19 @@ class MapScreenshotTest {
 
     @Test fun map_failed() = capture(
         MapUiState(player = Player("u", "땅주인", 0, 42), mapLoadFailed = true),
+    )
+
+    @Test fun tracking() = capture(
+        MapUiState(
+            player = Player("u", "땅주인", 0, 42),
+            isTracking = true,
+            walkCellCount = 3,
+            pendingCount = 2,
+            isGpsWeak = true,
+        ),
+    )
+
+    @Test fun permission_notice() = capture(
+        MapUiState(player = Player("u", "땅주인", 0, 42), showPermissionNotice = true),
     )
 }

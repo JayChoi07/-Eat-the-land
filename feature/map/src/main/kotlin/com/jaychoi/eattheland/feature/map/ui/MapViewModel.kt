@@ -5,9 +5,13 @@ import androidx.lifecycle.viewModelScope
 import com.jaychoi.eattheland.core.common.grid.HexGrid
 import com.jaychoi.eattheland.core.data.PlayerRepository
 import com.jaychoi.eattheland.core.data.TerritoryRepository
+import com.jaychoi.eattheland.core.data.location.LocationRepository
+import com.jaychoi.eattheland.core.data.tracking.TrackingRepository
 import com.jaychoi.eattheland.core.model.Cell
 import com.jaychoi.eattheland.core.model.CellId
+import com.jaychoi.eattheland.core.model.LatLngPoint
 import com.jaychoi.eattheland.core.model.Player
+import com.jaychoi.eattheland.core.model.TrackingState
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -22,26 +26,33 @@ import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
 
 /**
- * R-12-02: 플랜 B 에서 추적 중/아님 상태가 생기면 "상태별 허용 이벤트 다름" 1개 해당 → 여전히 MVVM-UDF.
+ * R-12-02: "상태별 허용 이벤트 다름"(Idle↔Tracking — CTA 가 시작/종료로 바뀜) 1개 → MVVM-UDF.
  * 뷰포트 → region 집합은 값이 바뀔 때만 재구독한다(flatMapLatest + 중복 제거).
  * 셀 리스너는 화면이 수집하는 동안만 산다 — 앱이 백그라운드로 가면 5초 뒤 끊겨 Firestore read 를 쓰지 않는다.
+ * 산책 시작/종료는 서비스(:app)가 하므로 여기엔 없다 — 화면은 TrackingRepository.state 를 읽기만 한다.
  */
 @HiltViewModel
 class MapViewModel @Inject constructor(
     private val territory: TerritoryRepository,
     players: PlayerRepository,
     private val grid: HexGrid,
+    tracking: TrackingRepository,
+    private val locations: LocationRepository,
 ) : ViewModel() {
 
-    /** 이 화면 안에서만 사는 상태. 스트림(셀·플레이어)과 combine 해 UiState 가 된다. */
+    /** 이 화면 안에서만 사는 상태. 스트림(셀·플레이어·추적·큐)과 combine 해 UiState 가 된다. */
     private data class Local(
         val regions: Set<CellId> = emptySet(),
         val isZoomedOut: Boolean = false,
         val mapLoadFailed: Boolean = false,
         val mapAttempt: Int = 0,
         val camera: CameraSnapshot? = null,
+        val lastKnown: LatLngPoint? = null,
+        val isFollowing: Boolean = true,
+        val showPermissionNotice: Boolean = false,
     )
 
     private val local = MutableStateFlow(Local())
@@ -54,16 +65,11 @@ class MapViewModel @Inject constructor(
     val uiState: StateFlow<MapUiState> = combine(
         cells,
         players.currentPlayer,
+        tracking.state,
+        territory.pendingCount,
         local,
-    ) { list, player, l ->
-        MapUiState(
-            player = player,
-            cells = list.map { it.toPolygon(player) },
-            isZoomedOut = l.isZoomedOut,
-            mapLoadFailed = l.mapLoadFailed,
-            mapAttempt = l.mapAttempt,
-            camera = l.camera,
-        )
+    ) { list, player, walk, pending, l ->
+        toUiState(list, player, walk, pending, l)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), MapUiState())
 
     fun onEvent(event: MapEvent) {
@@ -75,8 +81,41 @@ class MapViewModel @Inject constructor(
             MapEvent.RetryMap -> local.update {
                 it.copy(mapLoadFailed = false, mapAttempt = it.mapAttempt + 1)
             }
+
+            MapEvent.MyLocationClicked -> {
+                local.update { it.copy(isFollowing = true) }
+                refreshLastKnown()
+            }
+
+            is MapEvent.LocationPermission -> onPermission(event)
+
+            MapEvent.PermissionNoticeDismissed -> local.update {
+                it.copy(showPermissionNotice = false)
+            }
         }
     }
+
+    private fun toUiState(
+        list: List<Cell>,
+        player: Player?,
+        walk: TrackingState,
+        pending: Int,
+        l: Local,
+    ) = MapUiState(
+        player = player,
+        cells = list.map { it.toPolygon(player) },
+        isZoomedOut = l.isZoomedOut,
+        mapLoadFailed = l.mapLoadFailed,
+        mapAttempt = l.mapAttempt,
+        camera = l.camera,
+        myLocation = walk.lastPoint ?: l.lastKnown,
+        isFollowing = l.isFollowing,
+        isTracking = walk.isTracking,
+        walkCellCount = walk.capturedCount,
+        pendingCount = pending,
+        isGpsWeak = walk.isTracking && walk.isGpsWeak,
+        showPermissionNotice = l.showPermissionNotice,
+    )
 
     private fun cellsIn(regions: Set<CellId>): Flow<List<Cell>> =
         if (regions.isEmpty()) flowOf(emptyList()) else territory.observeCells(regions)
@@ -88,7 +127,25 @@ class MapViewModel @Inject constructor(
                 regions = if (zoomedOut) emptySet() else grid.regionsAround(event.center),
                 isZoomedOut = zoomedOut,
                 camera = CameraSnapshot(event.center, event.zoom.toInt()),
+                isFollowing = it.isFollowing && !event.byUser,
             )
+        }
+    }
+
+    private fun onPermission(event: MapEvent.LocationPermission) {
+        if (event.granted) {
+            local.update { it.copy(isFollowing = true) }
+            refreshLastKnown()
+        } else if (event.requested) {
+            local.update { it.copy(showPermissionNotice = true) }
+        }
+    }
+
+    // 권한 확인은 Route 가 한다. 권한이 없으면 lastKnown 이 null 을 준다.
+    private fun refreshLastKnown() {
+        viewModelScope.launch {
+            val point = locations.lastKnown() ?: return@launch
+            local.update { it.copy(lastKnown = point) }
         }
     }
 

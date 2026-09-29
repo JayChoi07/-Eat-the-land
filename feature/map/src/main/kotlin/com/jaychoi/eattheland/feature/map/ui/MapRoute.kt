@@ -1,9 +1,20 @@
 package com.jaychoi.eattheland.feature.map.ui
 
+import android.Manifest
+import android.content.Context
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.net.Uri
+import android.provider.Settings
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.platform.LocalContext
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation3.runtime.EntryProviderScope
@@ -11,17 +22,36 @@ import androidx.navigation3.runtime.NavKey
 import com.jaychoi.eattheland.core.designsystem.theme.TerritoryPalette
 import com.jaychoi.eattheland.core.model.LatLngPoint
 
-private val DEFAULT_CENTER = LatLngPoint(37.5665, 126.9780) // 서울시청. 현재 위치 연동은 Task 8
+private val DEFAULT_CENTER = LatLngPoint(37.5665, 126.9780) // 서울시청. 권한이 있으면 마지막 위치로 바로 옮긴다
 private const val DEFAULT_ZOOM = 16
 private const val FILL_ALPHA = 0.4f
 
-fun EntryProviderScope<NavKey>.mapEntry() {
-    entry<MapKey> { MapRoute() }
+/** 산책 시작/종료는 :app 이 FGS 로 잇는다 — feature 는 콜백만 노출한다(스펙 §5). */
+fun EntryProviderScope<NavKey>.mapEntry(onStartWalk: () -> Unit, onStopWalk: () -> Unit) {
+    entry<MapKey> { MapRoute(onStartWalk = onStartWalk, onStopWalk = onStopWalk) }
 }
 
 @Composable
-internal fun MapRoute(viewModel: MapViewModel = hiltViewModel()) {
+internal fun MapRoute(
+    onStartWalk: () -> Unit,
+    onStopWalk: () -> Unit,
+    viewModel: MapViewModel = hiltViewModel(),
+) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val context = LocalContext.current
+
+    // 화면을 열 때 권한이 있으면 마지막 위치로 이동(사용자 결정 1). 없으면 조용히 기본 위치.
+    LaunchedEffect(viewModel) {
+        val granted = context.hasLocationPermission()
+        viewModel.onEvent(MapEvent.LocationPermission(granted = granted, requested = false))
+    }
+    val launcher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions(),
+    ) { result ->
+        val granted = result.values.any { it }
+        viewModel.onEvent(MapEvent.LocationPermission(granted = granted, requested = true))
+        if (granted) onStartWalk()
+    }
 
     val drawable = uiState.cells.map { cell ->
         val color = TerritoryPalette.color(cell.colorIndex)
@@ -32,20 +62,56 @@ internal fun MapRoute(viewModel: MapViewModel = hiltViewModel()) {
             strokeArgb = color.toArgb(),
         )
     }
-
+    val myLocationStyle = MyLocationStyle(
+        fillArgb = MaterialTheme.colorScheme.primary.toArgb(),
+        ringArgb = MaterialTheme.colorScheme.surface.toArgb(),
+    )
     val camera = uiState.camera
-    MapScreen(uiState = uiState, onEvent = viewModel::onEvent) {
+
+    MapScreen(
+        uiState = uiState,
+        onEvent = viewModel::onEvent,
+        onWalkToggle = {
+            when {
+                uiState.isTracking -> onStopWalk()
+                context.hasLocationPermission() -> onStartWalk()
+                else -> launcher.launch(locationPermissions())
+            }
+        },
+        onOpenSettings = { context.openAppSettings() },
+    ) {
         // attempt 가 바뀌면 컴포저블이 새로 만들어져 MapView.start 가 다시 돈다.
         key(uiState.mapAttempt) {
             KakaoMapView(
                 cells = drawable,
                 initialCenter = camera?.center ?: DEFAULT_CENTER,
                 initialZoom = camera?.zoom ?: DEFAULT_ZOOM,
-                onCameraIdle = { center, zoom ->
-                    viewModel.onEvent(MapEvent.CameraIdle(center, zoom))
+                followPoint = if (uiState.isFollowing) uiState.myLocation else null,
+                myLocation = uiState.myLocation,
+                myLocationStyle = myLocationStyle,
+                onCameraIdle = { center, zoom, byUser ->
+                    viewModel.onEvent(MapEvent.CameraIdle(center, zoom, byUser))
                 },
                 onMapError = { viewModel.onEvent(MapEvent.MapLoadFailed) },
             )
         }
     }
+}
+
+private fun locationPermissions(): Array<String> = arrayOf(
+    Manifest.permission.ACCESS_FINE_LOCATION,
+    Manifest.permission.ACCESS_COARSE_LOCATION,
+)
+
+/** FGS location 타입은 coarse 만 있어도 시작할 수 있다. */
+private fun Context.hasLocationPermission(): Boolean =
+    locationPermissions().any { checkSelfPermission(it) == PackageManager.PERMISSION_GRANTED }
+
+private fun Context.openAppSettings() {
+    startActivity(
+        Intent(
+            Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+            Uri.fromParts("package", packageName, null),
+        ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+    )
 }
