@@ -17,6 +17,8 @@ data class OnboardingUiState(
 sealed interface OnboardingEvent {
     data object Next : OnboardingEvent
 
+    data object Back : OnboardingEvent
+
     data class PermissionResult(val locationGranted: Boolean) : OnboardingEvent
 
     data class NicknameChanged(val value: String) : OnboardingEvent

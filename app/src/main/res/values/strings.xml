@@ -5,4 +5,6 @@
     <string name="tracking_notification_title">산책 중</string>
     <string name="tracking_notification_text">이번 산책 %1$d칸</string>
     <string name="tracking_notification_stop">종료</string>
+    <string name="back_again_to_exit">한 번 더 누르면 종료돼요</string>
+    <string name="back_again_while_walking">산책은 알림에서 계속돼요 · 한 번 더 누르면 나가요</string>
 </resources>

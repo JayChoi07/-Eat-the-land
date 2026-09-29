@@ -2,6 +2,7 @@ package com.jaychoi.eattheland.feature.onboarding.ui
 
 import android.Manifest
 import android.os.Build
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.Composable
@@ -40,6 +41,11 @@ internal fun OnboardingRoute(
             onCompleted()
             viewModel.onEvent(OnboardingEvent.CompletedConsumed)
         }
+    }
+
+    // 소개 단계에서는 이 핸들러가 꺼져 :app 의 두 번 뒤로가기가 받는다.
+    BackHandler(enabled = uiState.step != OnboardingStep.Intro) {
+        viewModel.onEvent(OnboardingEvent.Back)
     }
 
     OnboardingScreen(

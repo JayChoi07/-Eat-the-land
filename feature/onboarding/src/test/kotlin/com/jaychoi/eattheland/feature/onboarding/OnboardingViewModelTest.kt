@@ -88,4 +88,18 @@ class OnboardingViewModelTest {
         vm.onEvent(OnboardingEvent.Submit)
         assertTrue(repository.setNicknameCalls.isEmpty())
     }
+
+    @Test
+    fun `Back 은 한 단계 뒤로, Intro 에서는 그대로`() = runTest {
+        val vm = viewModel()
+        vm.initialize()
+        vm.onEvent(OnboardingEvent.Next)
+        vm.onEvent(OnboardingEvent.PermissionResult(locationGranted = true))
+        vm.onEvent(OnboardingEvent.Back)
+        assertEquals(OnboardingStep.Permission, vm.uiState.value.step)
+        vm.onEvent(OnboardingEvent.Back)
+        assertEquals(OnboardingStep.Intro, vm.uiState.value.step)
+        vm.onEvent(OnboardingEvent.Back)
+        assertEquals(OnboardingStep.Intro, vm.uiState.value.step)
+    }
 }

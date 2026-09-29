@@ -1,15 +1,24 @@
 package com.jaychoi.eattheland
 
+import android.app.Activity
+import android.content.Context
+import android.content.ContextWrapper
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarDuration
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.adaptive.currentWindowAdaptiveInfoV2
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.navigation3.rememberViewModelStoreNavEntryDecorator
@@ -25,6 +34,7 @@ import com.jaychoi.eattheland.feature.onboarding.ui.OnboardingKey
 import com.jaychoi.eattheland.feature.onboarding.ui.onboardingEntry
 import com.jaychoi.eattheland.tracking.LocationTrackingService
 import com.jaychoi.eattheland.ui.AppRootViewModel
+import kotlinx.coroutines.launch
 
 /**
  * 앱 루트. 백스택·feature 조합을 :app 이 소유한다 (R-10-08, R-13-03).
@@ -51,7 +61,28 @@ fun EatTheLandApp(
         if (uiState.hasProfile) navigator.replaceAllIfPresent(from = OnboardingKey, to = MapKey)
     }
 
-    Scaffold(modifier = modifier) { innerPadding ->
+    val snackbarHostState = remember { SnackbarHostState() }
+    val gate = remember { DoubleBackGate() }
+    val scope = rememberCoroutineScope()
+    val exitMessage = stringResource(
+        if (uiState.isTracking) R.string.back_again_while_walking else R.string.back_again_to_exit,
+    )
+    val activity = context.findActivity()
+    // 백스택이 하나뿐일 때만 — 랭킹·설정·온보딩 단계는 각자 pop 한다(스펙 C §4).
+    BackHandler(enabled = backStack.size == 1) {
+        if (gate.press(System.currentTimeMillis())) {
+            activity?.finish()
+        } else {
+            scope.launch {
+                snackbarHostState.showSnackbar(exitMessage, duration = SnackbarDuration.Short)
+            }
+        }
+    }
+
+    Scaffold(
+        modifier = modifier,
+        snackbarHost = { SnackbarHost(snackbarHostState) },
+    ) { innerPadding ->
         NavDisplay(
             backStack = backStack,
             // Scaffold 는 인셋을 소비하지 않으므로 여기서 소비를 표시한다 (R-18-08).
@@ -74,4 +105,10 @@ fun EatTheLandApp(
             },
         )
     }
+}
+
+private tailrec fun Context.findActivity(): Activity? = when (this) {
+    is Activity -> this
+    is ContextWrapper -> baseContext.findActivity()
+    else -> null
 }

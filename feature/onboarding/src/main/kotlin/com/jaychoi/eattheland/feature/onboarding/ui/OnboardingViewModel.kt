@@ -34,6 +34,17 @@ class OnboardingViewModel @Inject constructor(
         when (event) {
             OnboardingEvent.Next -> _uiState.update { it.copy(step = OnboardingStep.Permission) }
 
+            OnboardingEvent.Back -> _uiState.update {
+                it.copy(
+                    step = when (it.step) {
+                        OnboardingStep.Intro -> OnboardingStep.Intro
+                        OnboardingStep.Permission -> OnboardingStep.Intro
+                        OnboardingStep.Nickname -> OnboardingStep.Permission
+                    },
+                    error = null,
+                )
+            }
+
             is OnboardingEvent.PermissionResult -> _uiState.update {
                 it.copy(step = OnboardingStep.Nickname)
             }
