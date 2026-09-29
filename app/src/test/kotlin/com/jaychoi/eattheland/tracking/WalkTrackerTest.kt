@@ -30,54 +30,95 @@ class WalkTrackerTest {
     private val tracker = WalkTracker(locations, territory, tracking, CaptureCellUseCase(), grid)
 
     private val a = LatLngPoint(37.5661, 126.9780)
-    private val b = LatLngPoint(37.5679, 126.9780)
+    private val b = LatLngPoint(37.5679, 126.9780) // a 에서 북쪽 약 200 m, 다른 셀
 
-    private fun fix(p: LatLngPoint, accuracy: Float = 10f, speed: Float? = 1.2f) =
-        LocationUpdate.Fix(LocationSample(p, accuracy, speed, timeMillis = 0L, isMock = false))
+    private fun fix(p: LatLngPoint, accuracy: Float = 10f, speed: Float? = 1.2f, time: Long = 0L) =
+        LocationUpdate.Fix(LocationSample(p, accuracy, speed, timeMillis = time, isMock = false))
 
     private fun TestScope.start(): Job =
         backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { tracker.run() }
 
+    private suspend fun emitAll(vararg fixes: LocationUpdate) {
+        fixes.forEach { locations.updates.emit(it) }
+    }
+
     @Test
-    fun `시작하면 큐를 비우고 추적 상태가 되며, 새 셀마다 캡처하고 센다`() = runTest {
+    fun `시작하면 큐를 비우고 추적 상태가 되며, 같은 새 셀 fix 2번 연속마다 캡처하고 센다`() = runTest {
         start()
         assertTrue(tracking.state.value.isTracking)
         assertEquals(1, territory.flushCalls)
-        locations.updates.emit(fix(a))
-        locations.updates.emit(fix(a)) // 같은 셀 — 캡처 안 함
-        locations.updates.emit(fix(b))
+        emitAll(fix(a))
+        assertTrue(territory.captureCalls.isEmpty()) // 첫 fix 는 후보
+        emitAll(fix(a), fix(a)) // 두 번째에 캡처, 세 번째는 같은 셀
+        emitAll(fix(b), fix(b))
         assertEquals(listOf(grid.cellOf(a), grid.cellOf(b)), territory.captureCalls)
         assertEquals(2, tracking.state.value.capturedCount)
         assertEquals(b, tracking.state.value.lastPoint)
     }
 
     @Test
+    fun `오가는 튐(A B A B)은 캡처하지 않는다`() = runTest {
+        start()
+        emitAll(fix(a), fix(a)) // a 캡처
+        emitAll(fix(b), fix(a), fix(b))
+        assertEquals(listOf(grid.cellOf(a)), territory.captureCalls)
+        emitAll(fix(b)) // 이제야 b 가 2연속
+        assertEquals(listOf(grid.cellOf(a), grid.cellOf(b)), territory.captureCalls)
+    }
+
+    @Test
+    fun `정확도 나쁜 fix 가 끼면 연속이 끊긴다`() = runTest {
+        start()
+        emitAll(fix(a), fix(a, accuracy = 80f), fix(a))
+        assertTrue(territory.captureCalls.isEmpty())
+        emitAll(fix(a))
+        assertEquals(listOf(grid.cellOf(a)), territory.captureCalls)
+    }
+
+    @Test
+    fun `속도 미상이면 직전 fix 와의 거리로 판정한다`() = runTest {
+        start()
+        // 200 m 를 5초에 → 너무 빠름. 그 뒤 같은 자리 5초 → 0 m/s 로 후보, 다음에 캡처
+        emitAll(
+            fix(a, speed = null, time = 0L),
+            fix(b, speed = null, time = 5_000L),
+            fix(b, speed = null, time = 10_000L),
+        )
+        assertTrue(territory.captureCalls.isEmpty())
+        emitAll(fix(b, speed = null, time = 15_000L))
+        assertEquals(listOf(grid.cellOf(b)), territory.captureCalls)
+    }
+
+    @Test
     fun `큐에 들어간 캡처도 세고, 이미 내 셀은 세지 않는다`() = runTest {
         start()
         territory.captureResult = CaptureResult.Queued
-        locations.updates.emit(fix(a))
+        emitAll(fix(a), fix(a))
         territory.captureResult = CaptureResult.AlreadyMine
-        locations.updates.emit(fix(b))
+        emitAll(fix(b), fix(b))
         assertEquals(1, tracking.state.value.capturedCount)
     }
 
     @Test
-    fun `실패한 셀은 다음 위치에서 다시 시도한다`() = runTest {
+    fun `실패한 셀은 같은 셀의 다음 위치에서 다시 시도하고 한 번만 센다`() = runTest {
         start()
         territory.captureResult = CaptureResult.Failed(null)
-        locations.updates.emit(fix(a))
+        emitAll(fix(a), fix(a))
         territory.captureResult = CaptureResult.Captured
-        locations.updates.emit(fix(a))
+        emitAll(fix(a))
         assertEquals(listOf(grid.cellOf(a), grid.cellOf(a)), territory.captureCalls)
+        assertEquals(1, tracking.state.value.capturedCount)
+        emitAll(fix(a)) // 이제 lastCell — 더 부르지 않는다
+        assertEquals(2, territory.captureCalls.size)
     }
 
     @Test
     fun `정확도가 나쁘면 캡처하지 않고 GPS 약함, 좋아지면 해제`() = runTest {
         start()
-        locations.updates.emit(fix(a, accuracy = 80f))
+        emitAll(fix(a, accuracy = 80f))
         assertTrue(tracking.state.value.isGpsWeak)
         assertTrue(territory.captureCalls.isEmpty())
-        locations.updates.emit(fix(a, accuracy = 10f))
+        emitAll(fix(a, accuracy = 10f))
         assertEquals(false, tracking.state.value.isGpsWeak)
     }
 
@@ -100,10 +141,9 @@ class WalkTrackerTest {
     fun `이미 큐에 있는 셀은 이번 산책 칸 수에 다시 세지 않는다`() = runTest {
         start()
         territory.captureResult = CaptureResult.Queued
-        locations.updates.emit(fix(a))
-        locations.updates.emit(fix(b))
+        emitAll(fix(a), fix(a), fix(b), fix(b))
         territory.captureResult = CaptureResult.AlreadyQueued
-        locations.updates.emit(fix(a))
+        emitAll(fix(a), fix(a))
         assertEquals(2, tracking.state.value.capturedCount)
     }
 
