@@ -99,7 +99,7 @@
 | 네비게이션 | 변경 없음. `mapEntry(onStartWalk, onStopWalk)` — feature 는 콜백만 노출(스펙 §5), 서비스 시작은 `:app` |
 | 상태 아키텍처 | R-12-02 Map 1/5 → MVVM-UDF. `uiState` 는 5개 스트림 combine + `stateIn(WhileSubscribed 5s)` — R-12-06 |
 | UseCase | `CaptureCellUseCase` 1개 추가 — R-16-02(로직이 있을 때만): 4개 판정 규칙. 캡처 흐름 조합은 UseCase 가 아니라 `WalkTracker`(:app) — `:core:domain` 이 JVM 모듈이라 Repository(Android 라이브러리)를 조합할 수 없음. R-16-07(2개 이상 조합 시 승격)과 어긋남 — 아래 "어긴 규칙" ⑤ |
-| 테스트 | 단위 80 + 스크린샷 8 + 규칙 21, 전부 통과. Repository 는 fake DataSource 로 조립 — R-30-10. Location 매핑은 Robolectric(플랫폼 `Location`) |
+| 테스트 | 단위 88 + 스크린샷 8 + 규칙 21, 전부 통과(최종 리뷰 반영 후). Repository 는 fake DataSource 로 조립 — R-30-10. Location 매핑은 Robolectric(플랫폼 `Location`) |
 | CI | 4게이트 그대로. 새 의존(datastore 1.2.1·work 2.12.0·lifecycle-service·play-services-location·material-icons-core)은 카탈로그 별칭 — R-10-12 |
 | 어긴 규칙 | ① **R-14-03**(Hilt 진입점은 Application·Activity) — `LocationTrackingService` 가 `@EntryPoint` 로 의존을 얻는 세 번째 진입 경로. 스펙 §3 이 예고한 위반, 대안 없음(FGS 는 시스템이 생성). ② **R-15-08**(저장 매체 선택) — 큐를 `stringSet` 하나에 통째로 저장. ≤ 300 항목·질의 없음·읽을 때 정렬이라 Room 을 만들지 않음. 항목이 늘거나 질의가 생기면 `:core:database`. ③ **R-10-01** 해석 — 위치 제공자에 전용 모듈 유형이 없어 `:core:data` 안에 둠(위). ④ **R-16-07**(Repository 2개 이상 조합은 UseCase 로) — `WalkTracker` 가 Repository 3개 + UseCase 를 조합하지만 `:app` 의 일반 클래스. 사유: `:core:domain` 은 순수 JVM(R-16-05)이라 Android 라이브러리인 `:core:data` 에 의존 불가. 단위 테스트는 fake 로 동일하게 확보. ⑤ 플랜 A 와 같은 사유로 `:core:model`·`:core:domain` 정적 분석 미적용(JVM 모듈 컨벤션 없음). `:core:datastore` 는 Android 라이브러리라 적용됨 |
 
@@ -113,3 +113,23 @@
 | 수동 검증 | 2대 뺏기 | 1대 + 시드 셀, 오프라인은 Wi-Fi·데이터 끄기 | 기기 1대 |
 
 스펙 본문은 이 표대로 갱신됨(`3062021`).
+
+## 최종 리뷰 (Codex gpt-6-astra, effort high, 읽기 전용)
+
+판정 DO NOT SHIP → 아래 8건 반영(`689fa29`) 후 4게이트·규칙 테스트·실기기 재확인(산책 시작/종료·내 위치 복귀) 통과.
+
+| # | 등급 | 지적 | 처리 |
+|---|---|---|---|
+| 1 | Critical | 위치 등록 `SecurityException` 이 예외로 Flow 를 닫아 `WalkTracker`·서비스 크래시 | `Unavailable` 전송 후 정상 종료, 등록 Task 실패 리스너 추가 |
+| 2 | Critical | 산책 종료(취소)가 10초 안의 오프라인 캡처 의도를 유실 | `capture()` 가 취소 시 `NonCancellable` 로 큐에 넣고 재전파 |
+| 3 | Critical | 재전송 실패(Unknown·경합)를 영구 실패로 보고 큐에서 삭제 | 성공·AlreadyMine·규칙 거부만 제거, 일시 오류는 보존 |
+| 4 | Important | 정지 상태에서 "내 위치" 복귀가 같은 좌표라 무시됨 | 따라가기 해제 시 `followed` 초기화 |
+| 5 | Important | 회전 뒤 권한 재확인이 사용자의 따라가기 해제를 풀음 | `requested=false` 는 `isFollowing` 을 건드리지 않음 |
+| 6 | Important | 산책 종료 후 추적 점이 새 마지막 위치를 가림 | `MapEvent.WalkStopped` 로 재조회, 추적 중일 때만 추적 점 우선 |
+| 7 | Important | 재전송 완료가 더 새 시각의 같은 셀까지 삭제 | `PendingCell(cell, queuedAt)` 버전 일치 항목만 제거 |
+| 8 | Important | 오프라인 재방문이 이번 산책 칸 수에 중복 집계 | `CaptureResult.AlreadyQueued` — 새로 들어간 셀만 셈 |
+| 9 | Minor | `Unavailable` 뒤 정지 상태에서 "GPS 신호가 약해요" 고착 | 이월 |
+| 10 | Minor | 재전송 도중 만료된 항목도 전송 | 이월 |
+
+리뷰어가 판단을 보류한 항목(FGS 실기기 경로·sticky 근거·지연 커밋·DataStore 메모리 테스트·지도 holder)은 레저 `Final: Ruling:` 줄에 결론을 적었다. 미검증으로 남는 것: 실제 걸으며 캡처·뺏기·화면 꺼짐(사용자 항목), 알림 권한 거부·sticky 재시작·백그라운드 전환 경로.
+
