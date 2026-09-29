@@ -183,4 +183,24 @@ describe('cells', () => {
     await assertSucceeds(getDoc(doc(bob(), `cells/${CELL}`)));
     await assertFails(getDoc(doc(anon(), `cells/${CELL}`)));
   });
+  test('캡처 묶음: 셀 뺏기 + 나 +1 + 이전 소유자 -1 은 통과, +2 는 거부', async () => {
+    await seedUser('alice', { cellCount: 3 });
+    await seedUser('bob', { cellCount: 0 });
+    await env.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore() as unknown as Firestore, `cells/${CELL}`), {
+        ownerUid: 'alice', ownerColor: 1, capturedAt: Timestamp.now(), region: REGION,
+      });
+    });
+    const db = bob();
+    const ok = writeBatch(db);
+    ok.set(doc(db, `cells/${CELL}`), cell('bob'));
+    ok.update(doc(db, 'users/bob'), { cellCount: 1 });
+    ok.update(doc(db, 'users/alice'), { cellCount: 2 });
+    await assertSucceeds(ok.commit());
+
+    const greedy = writeBatch(db);
+    greedy.set(doc(db, `cells/${CELL}`), cell('bob'));
+    greedy.update(doc(db, 'users/bob'), { cellCount: 3 });
+    await assertFails(greedy.commit());
+  });
 });

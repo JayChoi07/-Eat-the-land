@@ -1,7 +1,9 @@
 package com.jaychoi.eattheland.core.testing
 
+import com.jaychoi.eattheland.core.network.CaptureOutcome
 import com.jaychoi.eattheland.core.network.CellDataSource
 import com.jaychoi.eattheland.core.network.CellDto
+import com.jaychoi.eattheland.core.network.DataSourceException
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.emitAll
@@ -20,6 +22,24 @@ class FakeCellDataSource : CellDataSource {
 
     /** true 면 오류 전에 현재 값을 한 번 낸다(잘 받다가 리스너가 끊기는 경우). */
     var emitBeforeError: Boolean = false
+
+    val captures = mutableListOf<String>()
+    var captureError: DataSourceException? = null
+    var captureOutcome: CaptureOutcome = CaptureOutcome.Captured
+
+    override suspend fun capture(
+        cellId: String,
+        region: String,
+        uid: String,
+        color: Int,
+    ): CaptureOutcome {
+        captures += cellId
+        captureError?.let { throw it }
+        // 관찰 중인 지도가 fake 에서도 새 셀을 받게 한다.
+        docs.value = docs.value +
+            (cellId to CellDto(ownerUid = uid, ownerColor = color.toLong(), region = region))
+        return captureOutcome
+    }
 
     override fun observe(regions: Set<String>): Flow<Map<String, CellDto>> {
         requested += regions
