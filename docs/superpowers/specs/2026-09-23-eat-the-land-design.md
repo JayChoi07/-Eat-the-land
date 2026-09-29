@@ -290,7 +290,8 @@ service cloud.firestore {
 - **플랜 A**: 스캐폴딩 → 모델·HexGrid → Firebase 연결 → 보안 규칙+테스트 → network/data/domain → 온보딩 → 앱 루트 → 카카오맵 영토 보기
 - **플랜 B**: 위치 추적 FGS + CaptureCellUseCase + capture 트랜잭션 + 오프라인 큐
 - **플랜 B-2** (v3 토대 보정): 2연속 캡처·속도 폴백 → `walkedAt` → region res 8 + 규칙·시드·reset → 실기기 확인
-- **플랜 C**: 랭킹·설정·계정 삭제·CI 규칙 잡·내부 테스트 배포
+- **플랜 C** (설계: `2026-09-29-eat-the-land-plan-c-design.md`): C-1 앱 셸(아이콘·두 번 뒤로가기·설정·계정 삭제·랭킹·지도 아이콘) → C-2 지도 다듬기(거리·시간·상단 카드·결과 시트·walks 저장·셀 카드)
+- **플랜 D**: CI secret 주입·규칙 테스트 잡·Play 내부 테스트 배포
 
 ## 11. 리스크
 
