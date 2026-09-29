@@ -58,13 +58,13 @@
 
 ### 정보
 - 버전: `BuildConfig.VERSION_NAME` 은 `:app` 만 안다(R-19-13) → `:app` 이 `settingsEntry(versionName = …)` 로 넘긴다.
-- 오픈소스 라이선스: `LicensesKey` 화면, 정적 목록 — 카카오맵 SDK(카카오 이용약관 고지), H3(Apache 2.0), Firebase(Apache 2.0), AndroidX·Kotlin·Coroutines(Apache 2.0), Roborazzi 등 테스트 의존은 제외. 각 항목 이름·라이선스명·URL. 문구는 `strings.xml` 이 아니라 `res/raw/licenses.json`(항목 데이터) + 화면 라벨만 strings.
+- 오픈소스 라이선스: `LicensesKey` 화면, 정적 목록 — 카카오맵 SDK(카카오 이용약관 고지), H3(Apache 2.0), Firebase(Apache 2.0), AndroidX·Kotlin·Coroutines(Apache 2.0), Roborazzi 등 테스트 의존은 제외. 각 항목 이름·라이선스명·URL. 항목 데이터는 `strings.xml` 이 아니라 `OpenSourceLicense.kt` 의 Kotlin 상수 목록(항목 6개, IO·파싱 없음 — 플랜 C-1 에서 `res/raw/licenses.json` 대신 확정) + 화면 라벨만 strings.
 
 ## 6. 랭킹 화면 (`:feature:ranking`)
 
 ### 데이터
 - `UserDataSource` 확장: `suspend fun topByCellCount(limit: Int): List<Pair<String, UserDto>>`(uid + dto, `orderBy("cellCount", DESC).limit(limit).get()` — 단일 필드 인덱스 자동), `suspend fun countWithMoreCells(than: Int): Int`(`whereGreaterThan("cellCount", than).count().get(AggregateSource.SERVER)`).
-- `RankingRepository { suspend fun load(force: Boolean): Ranking }` in `:core:data` `ranking/`. `Ranking(entries: List<RankEntry>, me: MyRank?)`, `RankEntry(rank, uid, nickname, color, cellCount)`, `MyRank(rank, cellCount)`. 동점은 같은 순위(1,1,3). 캐시: 메모리(`@Singleton`), `force=false` 면 캐시 있으면 그대로. 내 순위: 목록에 내 uid 있으면 그 rank(읽기 0), 없고 내 cellCount > 0 이면 `countWithMoreCells(mine) + 1`(읽기 1), cellCount == 0 이면 `me = null`("아직 순위가 없어요"). 0칸 유저도 목록엔 나올 수 있다(상위 50 안이면) — 순위는 부여.
+- `RankingRepository { suspend fun load(force: Boolean = false): RankingLoad }` in `:core:data` `ranking/`. `RankingLoad = Success(ranking) | Failure(error: RankingError, cached: Ranking?)`, `RankingError { Offline, Unknown }`, `Ranking(entries: List<RankEntry>, me: MyRank?)`, `RankEntry(rank, uid, nickname, color, cellCount)`, `MyRank(rank, cellCount)`. 동점은 같은 순위(1,1,3). 캐시: 메모리(`@Singleton`, `Mutex` 로 동시 load 1회), `force=false` 면 캐시 있으면 그대로. 실패는 예외가 아니라 `Failure` 에 캐시를 동봉해 돌려준다. 내 순위: 목록에 내 uid 있으면 그 rank(읽기 0), 없고 내 cellCount > 0 이면 `countWithMoreCells(mine) + 1`(읽기 1), **내 cellCount == 0 이면 목록 안이어도 `me = null`**("아직 순위가 없어요"). 0칸 유저도 목록엔 나올 수 있다(상위 50 안이면) — 목록의 순위는 부여.
 - 예외는 `DataSourceException` → `RankingError { Offline, Unknown }`.
 
 ### 화면
