@@ -45,6 +45,10 @@ internal fun MapRoute(
         val granted = context.hasLocationPermission()
         viewModel.onEvent(MapEvent.LocationPermission(granted = granted, requested = false))
     }
+    // 산책이 끝나면 추적 점이 멈춘 자리 대신 지금 위치를 다시 읽는다(첫 컴포지션에서도 한 번 — 무해).
+    LaunchedEffect(uiState.isTracking) {
+        if (!uiState.isTracking) viewModel.onEvent(MapEvent.WalkStopped)
+    }
     val launcher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions(),
     ) { result ->

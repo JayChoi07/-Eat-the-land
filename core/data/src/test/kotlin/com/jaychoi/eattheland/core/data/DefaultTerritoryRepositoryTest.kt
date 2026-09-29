@@ -138,6 +138,36 @@ class DefaultTerritoryRepositoryTest {
     }
 
     @Test
+    fun `캡처 도중 취소되면(산책 종료) 큐에 넣고 나서 취소를 전파한다`() = runTest {
+        source.captureHangs = true
+        val job = launch { repo.capture(cell) }
+        runCurrent()
+        job.cancel()
+        runCurrent()
+        assertEquals(listOf(cell.value), pendingSource.stored.value.map { it.cellId })
+    }
+
+    @Test
+    fun `오프라인에서 이미 큐에 있는 셀을 다시 밟으면 AlreadyQueued`() = runTest {
+        source.captureError = DataSourceException(DataSourceException.Kind.Offline)
+        assertEquals(CaptureResult.Queued, repo.capture(cell))
+        assertEquals(CaptureResult.AlreadyQueued, repo.capture(cell))
+        assertEquals(1, pendingSource.stored.value.size)
+    }
+
+    @Test
+    fun `flushPending 은 일시 오류(Unknown) 항목을 남기고 다음으로 간다`() = runTest {
+        pendingSource.stored.value = listOf(
+            PendingCapture(cell.value, 100L),
+            PendingCapture(other.value, 200L),
+        )
+        source.captureErrorOnce = DataSourceException(DataSourceException.Kind.Unknown)
+        assertEquals(1, repo.flushPending())
+        assertEquals(listOf(cell.value, other.value), source.captures)
+        assertEquals(listOf(cell.value), pendingSource.stored.value.map { it.cellId })
+    }
+
+    @Test
     fun `로그인 전이거나 권한 오류면 Failed 이고 큐에 넣지 않는다`() = runTest {
         auth.uid.value = null
         assertTrue(repo.capture(cell) is CaptureResult.Failed)

@@ -61,7 +61,7 @@ class WalkTracker @Inject constructor(
                 cell
             }
 
-            CaptureResult.AlreadyMine -> cell
+            CaptureResult.AlreadyMine, CaptureResult.AlreadyQueued -> cell
 
             // 일시 오류면 같은 셀에서 다음 위치가 왔을 때 다시 시도한다.
             is CaptureResult.Failed -> lastCell

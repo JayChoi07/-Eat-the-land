@@ -11,6 +11,7 @@ import com.jaychoi.eattheland.core.testing.FakeTerritoryRepository
 import com.jaychoi.eattheland.core.testing.FakeTrackingRepository
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
@@ -86,6 +87,24 @@ class WalkTrackerTest {
         locations.updates.emit(LocationUpdate.Unavailable)
         assertTrue(tracking.state.value.isGpsWeak)
         assertTrue(tracking.state.value.isTracking)
+    }
+
+    @Test
+    fun `위치 스트림이 끝나면(권한 회수) 예외 없이 산책이 끝난다`() = runTest {
+        locations.updatesOverride = flowOf(LocationUpdate.Unavailable)
+        tracker.run()
+        assertEquals(false, tracking.state.value.isTracking)
+    }
+
+    @Test
+    fun `이미 큐에 있는 셀은 이번 산책 칸 수에 다시 세지 않는다`() = runTest {
+        start()
+        territory.captureResult = CaptureResult.Queued
+        locations.updates.emit(fix(a))
+        locations.updates.emit(fix(b))
+        territory.captureResult = CaptureResult.AlreadyQueued
+        locations.updates.emit(fix(a))
+        assertEquals(2, tracking.state.value.capturedCount)
     }
 
     @Test

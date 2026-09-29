@@ -22,8 +22,8 @@ import kotlinx.coroutines.launch
  * 위치 FGS (스펙 §3). Hilt 진입점이 아니라 @EntryPoint 로 의존을 얻는다 — R-14-03 은 진입점을 Application·Activity 로
  * 제한하므로 표준 준수 보고에 "어긴 규칙"으로 적는다(스펙이 예고한 위반).
  *
- * START_STICKY 로 죽었다 살아나면 intent 가 null 이다. Android 14+ 는 백그라운드에서 위치 FGS 시작을 금지하므로
- * 그때는 startForeground 를 시도하지 않고 바로 끝낸다(사용자가 지도에서 다시 시작).
+ * START_STICKY 로 죽었다 살아나면 intent 가 null 이다. 산책 상태(이번 산책 칸 수·마지막 셀)는 프로세스와 함께
+ * 사라져 이어 갈 수 없고, 사용자 조작 없이 위치 추적을 다시 켜지 않는다 — 바로 끝낸다(사용자가 지도에서 다시 시작).
  */
 class LocationTrackingService : LifecycleService() {
 

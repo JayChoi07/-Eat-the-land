@@ -92,6 +92,8 @@ class MapViewModel @Inject constructor(
             MapEvent.PermissionNoticeDismissed -> local.update {
                 it.copy(showPermissionNotice = false)
             }
+
+            MapEvent.WalkStopped -> refreshLastKnown()
         }
     }
 
@@ -108,7 +110,12 @@ class MapViewModel @Inject constructor(
         mapLoadFailed = l.mapLoadFailed,
         mapAttempt = l.mapAttempt,
         camera = l.camera,
-        myLocation = walk.lastPoint ?: l.lastKnown,
+        // 산책 중엔 추적 점, 끝나면 새로 읽은 마지막 위치(WalkStopped 가 갱신)를 우선한다.
+        myLocation = if (walk.isTracking) {
+            walk.lastPoint ?: l.lastKnown
+        } else {
+            l.lastKnown ?: walk.lastPoint
+        },
         isFollowing = l.isFollowing,
         isTracking = walk.isTracking,
         walkCellCount = walk.capturedCount,
@@ -132,9 +139,10 @@ class MapViewModel @Inject constructor(
         }
     }
 
+    // 화면을 열며 확인만 한 경우(requested=false)는 따라가기 설정을 건드리지 않는다 — 회전 뒤 재확인이 사용자의 해제를 풀지 않게.
     private fun onPermission(event: MapEvent.LocationPermission) {
         if (event.granted) {
-            local.update { it.copy(isFollowing = true) }
+            if (event.requested) local.update { it.copy(isFollowing = true) }
             refreshLastKnown()
         } else if (event.requested) {
             local.update { it.copy(showPermissionNotice = true) }

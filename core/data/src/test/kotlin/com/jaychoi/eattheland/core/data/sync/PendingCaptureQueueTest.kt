@@ -20,7 +20,7 @@ class PendingCaptureQueueTest {
 
     @Test
     fun `enqueue 는 시각과 함께 저장하고 자동 전송을 예약한다`() = runTest {
-        queue.enqueue(cell(1))
+        assertEquals(true, queue.enqueue(cell(1)))
         assertEquals(listOf(PendingCapture(cell(1).value, 100_000L)), source.stored.value)
         assertEquals(1, scheduler.scheduled)
         queue.count.test { assertEquals(1, awaitItem()) }
@@ -30,7 +30,7 @@ class PendingCaptureQueueTest {
     fun `같은 셀을 다시 넣으면 시각만 갱신된다`() = runTest {
         queue.enqueue(cell(1))
         now = 200_000L
-        queue.enqueue(cell(1))
+        assertEquals(false, queue.enqueue(cell(1)))
         assertEquals(listOf(PendingCapture(cell(1).value, 200_000L)), source.stored.value)
     }
 
@@ -57,7 +57,10 @@ class PendingCaptureQueueTest {
             PendingCapture(cell(0).value, 10L), // 만료
         )
         now = 10L + day + 1
-        assertEquals(listOf(cell(1), cell(2)), queue.snapshot())
+        assertEquals(
+            listOf(PendingCell(cell(1), 40_000L), PendingCell(cell(2), 50_000L)),
+            queue.snapshot(),
+        )
         assertEquals(2, source.stored.value.size)
     }
 
@@ -65,7 +68,17 @@ class PendingCaptureQueueTest {
     fun `remove 는 그 셀만 지운다`() = runTest {
         queue.enqueue(cell(1))
         queue.enqueue(cell(2))
-        queue.remove(cell(1))
+        queue.remove(PendingCell(cell(1), now))
         assertEquals(listOf(cell(2).value), source.stored.value.map { it.cellId })
+    }
+
+    @Test
+    fun `보낸 뒤 다시 들어온 같은 셀(더 새 시각)은 remove 가 지우지 않는다`() = runTest {
+        queue.enqueue(cell(1))
+        val sent = queue.snapshot().single()
+        now = 500_000L
+        queue.enqueue(cell(1)) // 재전송 중 실시간 캡처가 다시 넣음
+        queue.remove(sent)
+        assertEquals(listOf(PendingCapture(cell(1).value, 500_000L)), source.stored.value)
     }
 }

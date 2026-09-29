@@ -200,6 +200,40 @@ class MapViewModelTest {
     }
 
     @Test
+    fun `따라가기를 끈 뒤 화면 재생성의 권한 확인은 따라가기를 다시 켜지 않는다`() = runTest {
+        locations.lastKnownPoint = seoul
+        val vm = viewModel()
+        vm.uiState.test {
+            vm.onEvent(MapEvent.CameraIdle(seoul, zoom = 16f, byUser = true))
+            awaitItemUntil { !it.isFollowing }
+            vm.onEvent(MapEvent.LocationPermission(granted = true, requested = false))
+            val state = awaitItemUntil { it.myLocation == seoul }
+            assertEquals(false, state.isFollowing)
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun `산책 중엔 추적 위치, 산책이 끝나면 새로 읽은 마지막 위치를 쓴다`() = runTest {
+        val walkPoint = LatLngPoint(37.5700, 126.9800)
+        val after = LatLngPoint(37.5800, 126.9900)
+        locations.lastKnownPoint = seoul
+        val vm = viewModel()
+        vm.uiState.test {
+            vm.onEvent(MapEvent.LocationPermission(granted = true, requested = false))
+            awaitItemUntil { it.myLocation == seoul }
+            tracking.onWalkStarted()
+            tracking.onLocation(walkPoint, isGpsWeak = false)
+            awaitItemUntil { it.myLocation == walkPoint }
+            tracking.onWalkStopped()
+            locations.lastKnownPoint = after
+            vm.onEvent(MapEvent.WalkStopped)
+            awaitItemUntil { it.myLocation == after }
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
     fun `사용자가 지도를 움직이면 따라가기 해제, 내 위치 버튼으로 복귀`() = runTest {
         val vm = viewModel()
         vm.uiState.test {

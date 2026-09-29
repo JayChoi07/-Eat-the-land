@@ -51,4 +51,7 @@ sealed interface MapEvent {
     data class LocationPermission(val granted: Boolean, val requested: Boolean) : MapEvent
 
     data object PermissionNoticeDismissed : MapEvent
+
+    /** 산책이 끝났다 — 추적 위치 대신 마지막 위치를 새로 읽는다. */
+    data object WalkStopped : MapEvent
 }

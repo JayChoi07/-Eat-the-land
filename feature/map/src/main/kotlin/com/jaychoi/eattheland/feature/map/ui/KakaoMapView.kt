@@ -151,6 +151,8 @@ private class MapHolder(private val density: Float) {
 
     fun follow(point: LatLngPoint?) {
         latestFollow = point
+        // 따라가기가 꺼지면 기억을 지운다 — 같은 점으로 "내 위치" 복귀를 눌러도 다시 움직이게.
+        if (point == null) followed = null
         drawLatest()
     }
 

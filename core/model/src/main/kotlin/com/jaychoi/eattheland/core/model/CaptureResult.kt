@@ -8,5 +8,8 @@ sealed interface CaptureResult {
 
     data object Queued : CaptureResult
 
+    /** 오프라인이고 같은 셀이 이미 큐에 있음 — 새로 센 칸이 아니다. */
+    data object AlreadyQueued : CaptureResult
+
     data class Failed(val cause: Throwable?) : CaptureResult
 }

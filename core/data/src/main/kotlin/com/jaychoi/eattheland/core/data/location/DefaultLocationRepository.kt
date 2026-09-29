@@ -23,7 +23,7 @@ class DefaultLocationRepository @Inject constructor(
     private val client: FusedLocationProviderClient,
 ) : LocationRepository {
 
-    @Suppress("MissingPermission")
+    @Suppress("MissingPermission", "SwallowedException")
     override fun updates(): Flow<LocationUpdate> = callbackFlow {
         val callback = object : LocationCallback() {
             override fun onLocationResult(result: LocationResult) {
@@ -39,9 +39,12 @@ class DefaultLocationRepository @Inject constructor(
             .build()
         try {
             client.requestLocationUpdates(request, callback, Looper.getMainLooper())
+                // 등록 자체가 비동기로 실패해도(설정 꺼짐 등) 소비자는 Unavailable 로 안다.
+                .addOnFailureListener { trySend(LocationUpdate.Unavailable) }
         } catch (e: SecurityException) {
+            // 권한이 확인 뒤 회수된 경우. 예외로 닫으면 수집자(WalkTracker)가 죽는다 — 알리고 정상 종료.
             trySend(LocationUpdate.Unavailable)
-            close(e)
+            close()
         }
         awaitClose { client.removeLocationUpdates(callback) }
     }

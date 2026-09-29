@@ -31,6 +31,9 @@ class FakeCellDataSource : CellDataSource {
     /** true 면 capture 가 끝나지 않는다(오프라인에서 연결을 기다리는 Firestore 트랜잭션 흉내). */
     var captureHangs: Boolean = false
 
+    /** 다음 한 번의 capture 만 이 예외로 실패한다. */
+    var captureErrorOnce: DataSourceException? = null
+
     override suspend fun capture(
         cellId: String,
         region: String,
@@ -39,6 +42,10 @@ class FakeCellDataSource : CellDataSource {
     ): CaptureOutcome {
         captures += cellId
         if (captureHangs) awaitCancellation()
+        captureErrorOnce?.let {
+            captureErrorOnce = null
+            throw it
+        }
         captureError?.let { throw it }
         // 관찰 중인 지도가 fake 에서도 새 셀을 받게 한다.
         docs.value = docs.value +
