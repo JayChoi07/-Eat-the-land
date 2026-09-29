@@ -33,6 +33,9 @@ android {
         // versionCode·versionName 부여 방식은 19가 규칙으로 정하지 않는다(출처 침묵). 프로젝트 지침에서 정한다.
         versionCode = 1
         versionName = "1.0.0"
+        // 카카오맵 SDK 와 h3-android 는 ARM 네이티브만 제공한다. x86 바이너리가 섞이면 x86 기기·에뮬레이터가
+        // x86 ABI 로 실행하다 UnsatisfiedLinkError 로 죽으므로 ARM 만 담는다(에뮬레이터는 ARM 변환으로 실행).
+        ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a") }
     }
 
     // 카카오맵 네이티브 앱 키. 새 카카오 콘솔은 키당 패키지 1개라 debug/release 키가 다르다 (스펙 §7).
