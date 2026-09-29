@@ -17,5 +17,6 @@ dependencies {
     implementation(projects.core.common)
     implementation(projects.core.network)
     implementation(projects.core.data)
+    implementation(projects.core.datastore)
     implementation(libs.kotlinx.coroutines.android)
 }
