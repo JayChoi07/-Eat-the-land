@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
@@ -15,12 +16,15 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Button
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -31,6 +35,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.jaychoi.eattheland.core.designsystem.theme.AppTheme
 import com.jaychoi.eattheland.core.model.Player
+import com.jaychoi.eattheland.core.model.WalkSummary
 import com.jaychoi.eattheland.feature.map.R
 
 /** 지도는 슬롯으로 받아 스크린샷 테스트가 SDK 없이 찍을 수 있게 한다. 상태와 콜백만 받는다 (R-17-01). */
@@ -58,6 +63,9 @@ fun MapScreen(
         )
         if (uiState.mapLoadFailed) {
             MapLoadFailed(onRetry = { onEvent(MapEvent.RetryMap) })
+        }
+        uiState.summary?.let { summary ->
+            WalkSummarySheet(summary, onDismiss = { onEvent(MapEvent.SummaryDismissed) })
         }
     }
 }
@@ -229,6 +237,63 @@ private fun PermissionNotice(onOpenSettings: () -> Unit, onDismiss: () -> Unit) 
         }
     }
     Spacer(Modifier.height(8.dp))
+}
+
+/** 산책 종료 결과(스펙 C §8). 저장 없음 — 닫으면 끝. 0칸 산책도 뜬다. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun WalkSummarySheet(summary: WalkSummary, onDismiss: () -> Unit) {
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
+        Column(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 8.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Text(
+                stringResource(R.string.map_summary_title),
+                style = MaterialTheme.typography.titleLarge,
+            )
+            Spacer(Modifier.height(24.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceEvenly,
+            ) {
+                SummaryNumber(
+                    value = stringResource(R.string.map_summary_cells, summary.cells),
+                    label = stringResource(R.string.map_summary_label_cells),
+                )
+                SummaryNumber(
+                    value = distanceText(summary.meters),
+                    label = stringResource(R.string.map_summary_label_distance),
+                )
+                SummaryNumber(
+                    value = durationText(summary.endedAtMillis - summary.startedAtMillis),
+                    label = stringResource(R.string.map_summary_label_time),
+                )
+            }
+            Spacer(Modifier.height(24.dp))
+            Button(onClick = onDismiss, modifier = Modifier.fillMaxWidth()) {
+                Text(stringResource(R.string.map_summary_confirm))
+            }
+            Spacer(Modifier.height(16.dp))
+        }
+    }
+}
+
+@Composable
+private fun SummaryNumber(value: String, label: String) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Text(
+            value,
+            style = MaterialTheme.typography.headlineMedium,
+            color = MaterialTheme.colorScheme.primary,
+        )
+        Text(
+            label,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
 }
 
 /** 카카오 인증·통신 오류. 다시 시도는 MapView 를 새로 만든다(스펙 §5). */

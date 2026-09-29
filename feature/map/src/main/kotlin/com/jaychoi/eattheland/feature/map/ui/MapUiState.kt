@@ -3,6 +3,7 @@ package com.jaychoi.eattheland.feature.map.ui
 import com.jaychoi.eattheland.core.model.CellId
 import com.jaychoi.eattheland.core.model.LatLngPoint
 import com.jaychoi.eattheland.core.model.Player
+import com.jaychoi.eattheland.core.model.WalkSummary
 
 /**
  * 이 줌 미만에서는 셀 리스너를 걸지 않고 안내 문구를 띄운다(Firestore read 절약).
@@ -42,6 +43,8 @@ data class MapUiState(
     val isGpsWeak: Boolean = false,
     /** "산책 시작" 을 눌렀는데 위치 권한을 거부한 뒤. */
     val showPermissionNotice: Boolean = false,
+    /** 직전 산책 결과. 산책 중이 아니고 아직 닫지 않았을 때만. */
+    val summary: WalkSummary? = null,
 )
 
 sealed interface MapEvent {
@@ -61,4 +64,7 @@ sealed interface MapEvent {
 
     /** 산책이 끝났다 — 추적 위치 대신 마지막 위치를 새로 읽는다. */
     data object WalkStopped : MapEvent
+
+    /** 결과 시트를 닫았다(확인·바깥 탭·뒤로). */
+    data object SummaryDismissed : MapEvent
 }

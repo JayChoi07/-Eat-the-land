@@ -42,7 +42,7 @@ class MapViewModel @Inject constructor(
     private val territory: TerritoryRepository,
     players: PlayerRepository,
     private val grid: HexGrid,
-    tracking: TrackingRepository,
+    private val tracking: TrackingRepository,
     private val locations: LocationRepository,
     clock: Clock,
 ) : ViewModel() {
@@ -113,6 +113,8 @@ class MapViewModel @Inject constructor(
             }
 
             MapEvent.WalkStopped -> refreshLastKnown()
+
+            MapEvent.SummaryDismissed -> tracking.onSummaryDismissed()
         }
     }
 
@@ -146,6 +148,7 @@ class MapViewModel @Inject constructor(
             // 줌 아웃 안내와 같은 자리를 쓰므로 둘이 동시에 뜨지 않는다.
             isGpsWeak = walk.isTracking && walk.isGpsWeak && !l.isZoomedOut,
             showPermissionNotice = l.showPermissionNotice,
+            summary = walk.lastSummary.takeIf { !walk.isTracking },
         )
     }
 

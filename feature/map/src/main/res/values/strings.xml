@@ -20,4 +20,10 @@
     <string name="map_duration_hour">%1$d시간</string>
     <string name="map_duration_hour_min">%1$d시간 %2$d분</string>
     <string name="map_gps_weak">GPS 신호가 약해요 · 하늘이 보이는 곳에서 잡혀요</string>
+    <string name="map_summary_title">이번 산책</string>
+    <string name="map_summary_cells">%1$d칸</string>
+    <string name="map_summary_label_cells">칸</string>
+    <string name="map_summary_label_distance">거리</string>
+    <string name="map_summary_label_time">시간</string>
+    <string name="map_summary_confirm">확인</string>
 </resources>

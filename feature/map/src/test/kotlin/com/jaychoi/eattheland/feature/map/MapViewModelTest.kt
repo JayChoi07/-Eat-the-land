@@ -5,6 +5,7 @@ import app.cash.turbine.test
 import com.jaychoi.eattheland.core.model.Cell
 import com.jaychoi.eattheland.core.model.LatLngPoint
 import com.jaychoi.eattheland.core.model.Player
+import com.jaychoi.eattheland.core.model.WalkSummary
 import com.jaychoi.eattheland.core.testing.FakeHexGrid
 import com.jaychoi.eattheland.core.testing.FakeLocationRepository
 import com.jaychoi.eattheland.core.testing.FakePlayerRepository
@@ -278,6 +279,40 @@ class MapViewModelTest {
             assertTrue(awaitItemUntil { it.isGpsWeak }.isGpsWeak)
             vm.onEvent(MapEvent.CameraIdle(seoul, zoom = 13f, byUser = false))
             assertEquals(false, awaitItemUntil { it.isZoomedOut }.isGpsWeak)
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun `산책이 끝나면 요약이 뜨고, 닫으면 사라지며, 다시 시작해도 옛 요약은 뜨지 않는다`() = runTest {
+        val vm = viewModel()
+        vm.uiState.test {
+            assertNull(awaitItem().summary)
+            tracking.onWalkStarted(nowMillis = 0L)
+            tracking.onCaptured()
+            tracking.onDistance(320.0)
+            awaitItemUntil { it.isTracking }
+            tracking.onWalkStopped(nowMillis = 90_000L)
+            val ended = awaitItemUntil { it.summary != null }
+            assertEquals(WalkSummary(0L, 90_000L, cells = 1, meters = 320.0), ended.summary)
+            vm.onEvent(MapEvent.SummaryDismissed)
+            assertNull(awaitItemUntil { it.summary == null }.summary)
+            tracking.onWalkStarted(nowMillis = 100_000L)
+            assertNull(awaitItemUntil { it.isTracking }.summary)
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun `산책 중에는 요약을 보이지 않는다`() = runTest {
+        val vm = viewModel()
+        vm.uiState.test {
+            awaitItem()
+            tracking.onWalkStarted(nowMillis = 0L)
+            tracking.onWalkStopped(nowMillis = 1_000L)
+            awaitItemUntil { it.summary != null }
+            tracking.onWalkStarted(nowMillis = 2_000L) // 요약을 안 닫고 바로 재시작
+            assertNull(awaitItemUntil { it.isTracking }.summary)
             cancelAndIgnoreRemainingEvents()
         }
     }
