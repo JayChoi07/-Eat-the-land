@@ -1,5 +1,6 @@
 package com.jaychoi.eattheland.tracking
 
+import com.jaychoi.eattheland.core.common.Clock
 import com.jaychoi.eattheland.core.domain.CaptureCellUseCase
 import com.jaychoi.eattheland.core.model.CaptureResult
 import com.jaychoi.eattheland.core.model.LatLngPoint
@@ -27,7 +28,8 @@ class WalkTrackerTest {
     private val territory = FakeTerritoryRepository()
     private val tracking = FakeTrackingRepository()
     private val grid = FakeHexGrid()
-    private val tracker = WalkTracker(locations, territory, tracking, CaptureCellUseCase(), grid)
+    private val tracker =
+        WalkTracker(locations, territory, tracking, CaptureCellUseCase(), grid, Clock { 0L })
 
     private val a = LatLngPoint(37.5661, 126.9780)
     private val b = LatLngPoint(37.5679, 126.9780) // a 에서 북쪽 약 200 m, 다른 셀

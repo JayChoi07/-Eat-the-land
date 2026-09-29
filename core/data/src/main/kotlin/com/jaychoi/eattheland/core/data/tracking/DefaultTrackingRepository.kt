@@ -2,6 +2,7 @@ package com.jaychoi.eattheland.core.data.tracking
 
 import com.jaychoi.eattheland.core.model.LatLngPoint
 import com.jaychoi.eattheland.core.model.TrackingState
+import com.jaychoi.eattheland.core.model.WalkSummary
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -15,13 +16,26 @@ class DefaultTrackingRepository @Inject constructor() : TrackingRepository {
     private val _state = MutableStateFlow(TrackingState())
     override val state: StateFlow<TrackingState> = _state.asStateFlow()
 
-    override fun onWalkStarted() =
-        _state.update { TrackingState(isTracking = true, lastPoint = it.lastPoint) }
+    override fun onWalkStarted(nowMillis: Long) = _state.update {
+        TrackingState(isTracking = true, lastPoint = it.lastPoint, startedAtMillis = nowMillis)
+    }
 
-    override fun onWalkStopped() = _state.update { it.copy(isTracking = false, isGpsWeak = false) }
+    override fun onWalkStopped(nowMillis: Long) = _state.update {
+        it.copy(isTracking = false, isGpsWeak = false, lastSummary = it.summaryAt(nowMillis))
+    }
 
     override fun onLocation(point: LatLngPoint?, isGpsWeak: Boolean) =
         _state.update { it.copy(lastPoint = point ?: it.lastPoint, isGpsWeak = isGpsWeak) }
 
     override fun onCaptured() = _state.update { it.copy(capturedCount = it.capturedCount + 1) }
+
+    override fun onDistance(meters: Double) =
+        _state.update { it.copy(distanceMeters = it.distanceMeters + meters) }
+
+    override fun onSummaryDismissed() = _state.update { it.copy(lastSummary = null) }
+
+    private fun TrackingState.summaryAt(endedAtMillis: Long): WalkSummary? {
+        val startedAt = startedAtMillis ?: return null
+        return WalkSummary(startedAt, endedAtMillis, capturedCount, distanceMeters)
+    }
 }

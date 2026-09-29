@@ -159,7 +159,7 @@ class MapViewModelTest {
     fun `산책 상태·이번 산책 칸 수·GPS 약함·전송 대기가 UiState 에 비친다`() = runTest {
         val vm = viewModel()
         vm.uiState.test {
-            tracking.onWalkStarted()
+            tracking.onWalkStarted(0L)
             tracking.onCaptured()
             tracking.onLocation(seoul, isGpsWeak = true)
             territory.pending.value = 2
@@ -222,10 +222,10 @@ class MapViewModelTest {
         vm.uiState.test {
             vm.onEvent(MapEvent.LocationPermission(granted = true, requested = false))
             awaitItemUntil { it.myLocation == seoul }
-            tracking.onWalkStarted()
+            tracking.onWalkStarted(0L)
             tracking.onLocation(walkPoint, isGpsWeak = false)
             awaitItemUntil { it.myLocation == walkPoint }
-            tracking.onWalkStopped()
+            tracking.onWalkStopped(0L)
             locations.lastKnownPoint = after
             vm.onEvent(MapEvent.WalkStopped)
             awaitItemUntil { it.myLocation == after }

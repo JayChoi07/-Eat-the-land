@@ -40,7 +40,7 @@ class AppRootViewModelTest {
         val vm = AppRootViewModel(players, tracking)
         vm.uiState.test {
             awaitItem()
-            tracking.onWalkStarted()
+            tracking.onWalkStarted(0L)
             assertTrue(awaitItemUntil { it.isTracking }.isTracking)
             cancelAndIgnoreRemainingEvents()
         }
