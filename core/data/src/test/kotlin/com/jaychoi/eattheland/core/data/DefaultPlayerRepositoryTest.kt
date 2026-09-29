@@ -204,6 +204,34 @@ class DefaultPlayerRepositoryTest {
         assertTrue(nicknames.deleteCalls.isEmpty())
     }
 
+    @Test
+    fun `nicknameOf 는 users 문서를 한 번만 읽고 세션 캐시한다`() = runTest {
+        users.users.value = mapOf("u9" to UserDto(nickname = "산책왕", color = 1, cellCount = 5))
+        val repo = repo(StandardTestDispatcher(testScheduler))
+        assertEquals("산책왕", repo.nicknameOf("u9"))
+        assertEquals("산책왕", repo.nicknameOf("u9"))
+        assertEquals(1, users.getCalls)
+    }
+
+    @Test
+    fun `문서가 없으면 null 이고 그것도 캐시한다 - 떠난 사람`() = runTest {
+        val repo = repo(StandardTestDispatcher(testScheduler))
+        assertNull(repo.nicknameOf("gone"))
+        assertNull(repo.nicknameOf("gone"))
+        assertEquals(1, users.getCalls)
+    }
+
+    @Test
+    fun `읽기 오류면 null 이고 캐시하지 않는다`() = runTest {
+        users.getError = DataSourceException(DataSourceException.Kind.Offline)
+        val repo = repo(StandardTestDispatcher(testScheduler))
+        assertNull(repo.nicknameOf("u9"))
+        users.getError = null
+        users.users.value = mapOf("u9" to UserDto(nickname = "산책왕", color = 1, cellCount = 5))
+        assertEquals("산책왕", repo.nicknameOf("u9"))
+        assertEquals(2, users.getCalls)
+    }
+
     private companion object {
         const val FIRST_RETRY_MS = 5_000L
     }

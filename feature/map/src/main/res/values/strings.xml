@@ -26,4 +26,14 @@
     <string name="map_summary_label_distance">거리</string>
     <string name="map_summary_label_time">시간</string>
     <string name="map_summary_confirm">확인</string>
+    <string name="map_cell_card">%1$s · %2$s</string>
+    <string name="map_cell_owner_me">내 땅</string>
+    <string name="map_cell_owner_gone">떠난 사람</string>
+    <string name="map_cell_owner_loading">…</string>
+    <string name="map_time_just_now">방금</string>
+    <string name="map_time_minutes_ago">%1$d분 전</string>
+    <string name="map_time_hours_ago">%1$d시간 전</string>
+    <string name="map_time_yesterday">어제</string>
+    <string name="map_time_days_ago">%1$d일 전</string>
+    <string name="map_time_date_pattern">M월 d일</string>
 </resources>

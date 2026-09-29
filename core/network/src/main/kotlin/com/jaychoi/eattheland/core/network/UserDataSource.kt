@@ -19,4 +19,7 @@ interface UserDataSource {
 
     /** `users where cellCount > than` 의 count 집계(1000문서당 읽기 1). */
     suspend fun countWithMoreCells(than: Int): Int
+
+    /** `users/{uid}` 일회성 읽기. 문서 없음 → null. 실패는 DataSourceException. */
+    suspend fun get(uid: String): UserDto?
 }

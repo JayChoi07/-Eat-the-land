@@ -12,10 +12,14 @@ import com.github.takahirom.roborazzi.ExperimentalRoborazziApi
 import com.github.takahirom.roborazzi.captureRoboImage
 import com.github.takahirom.roborazzi.captureScreenRoboImage
 import com.jaychoi.eattheland.core.designsystem.theme.AppTheme
+import com.jaychoi.eattheland.core.model.CellId
 import com.jaychoi.eattheland.core.model.Player
 import com.jaychoi.eattheland.core.model.WalkSummary
+import com.jaychoi.eattheland.feature.map.ui.CellOwner
 import com.jaychoi.eattheland.feature.map.ui.MapScreen
 import com.jaychoi.eattheland.feature.map.ui.MapUiState
+import com.jaychoi.eattheland.feature.map.ui.RelativeTime
+import com.jaychoi.eattheland.feature.map.ui.SelectedCell
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -74,6 +78,17 @@ class MapScreenshotTest {
 
     @Test fun permission_notice() = capture(
         MapUiState(player = Player("u", "땅주인", 0, 42), showPermissionNotice = true),
+    )
+
+    @Test fun cell_card() = capture(
+        MapUiState(
+            player = Player("u", "땅주인", 0, 42),
+            selectedCell = SelectedCell(
+                CellId("8b30e1c32214fff"),
+                CellOwner.Named("산책왕"),
+                RelativeTime.Hours(3),
+            ),
+        ),
     )
 
     /** ModalBottomSheet 는 별도 창이라 onRoot 캡처에 안 잡힌다 — 화면 전체를 찍는다. */

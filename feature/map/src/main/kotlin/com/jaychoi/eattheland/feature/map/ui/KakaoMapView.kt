@@ -53,6 +53,7 @@ fun KakaoMapView(
     myLocationStyle: MyLocationStyle,
     onCameraIdle: (LatLngPoint, Float, Boolean) -> Unit,
     onMapError: () -> Unit,
+    onMapClick: (LatLngPoint) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -61,6 +62,7 @@ fun KakaoMapView(
     // factory 는 한 번만 실행된다. 그 안의 콜백이 첫 컴포지션 값을 붙잡지 않도록 최신 값을 따로 든다.
     val currentOnCameraIdle by rememberUpdatedState(onCameraIdle)
     val currentOnMapError by rememberUpdatedState(onMapError)
+    val currentOnMapClick by rememberUpdatedState(onMapClick)
 
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
@@ -101,6 +103,11 @@ fun KakaoMapView(
                                     position.zoomLevel.toFloat(),
                                     gesture != GestureType.Unknown,
                                 )
+                            }
+                            // OnMapClickListener.onMapClicked(KakaoMap, LatLng, PointF, Poi)
+                            // — 2.15.2 javap 확인
+                            map.setOnMapClickListener { _, latLng, _, _ ->
+                                currentOnMapClick(LatLngPoint(latLng.latitude, latLng.longitude))
                             }
                             holder.drawLatest()
                         }

@@ -37,6 +37,9 @@ import com.jaychoi.eattheland.core.designsystem.theme.AppTheme
 import com.jaychoi.eattheland.core.model.Player
 import com.jaychoi.eattheland.core.model.WalkSummary
 import com.jaychoi.eattheland.feature.map.R
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 /** 지도는 슬롯으로 받아 스크린샷 테스트가 SDK 없이 찍을 수 있게 한다. 상태와 콜백만 받는다 (R-17-01). */
 @Composable
@@ -106,6 +109,7 @@ private fun MapOverlays(
             modifier = Modifier.align(Alignment.BottomCenter).padding(24.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
+            uiState.selectedCell?.let { CellCard(it) }
             if (uiState.isZoomedOut) Hint(stringResource(R.string.map_zoomed_out_hint))
             if (uiState.showPermissionNotice) {
                 PermissionNotice(
@@ -204,6 +208,46 @@ private fun durationText(millis: Long): String {
         else -> stringResource(R.string.map_duration_hour_min, t.hours, t.minutes)
     }
 }
+
+/** 탭한 셀 카드(스펙 C §9): "산책왕 · 3시간 전" / "내 땅 · 어제" / "떠난 사람 · 3일 전". */
+@Composable
+private fun CellCard(cell: SelectedCell) {
+    Surface(
+        shape = MaterialTheme.shapes.large,
+        color = MaterialTheme.colorScheme.surfaceContainer,
+        tonalElevation = 2.dp,
+    ) {
+        Text(
+            stringResource(R.string.map_cell_card, ownerText(cell.owner), timeText(cell.time)),
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
+            style = MaterialTheme.typography.bodyLarge,
+        )
+    }
+    Spacer(Modifier.height(8.dp))
+}
+
+@Composable
+private fun ownerText(owner: CellOwner): String = when (owner) {
+    CellOwner.Me -> stringResource(R.string.map_cell_owner_me)
+    CellOwner.Loading -> stringResource(R.string.map_cell_owner_loading)
+    is CellOwner.Named -> owner.nickname
+    CellOwner.Gone -> stringResource(R.string.map_cell_owner_gone)
+}
+
+@Composable
+private fun timeText(time: RelativeTime): String = when (time) {
+    RelativeTime.JustNow -> stringResource(R.string.map_time_just_now)
+    is RelativeTime.Minutes -> stringResource(R.string.map_time_minutes_ago, time.value)
+    is RelativeTime.Hours -> stringResource(R.string.map_time_hours_ago, time.value)
+    RelativeTime.Yesterday -> stringResource(R.string.map_time_yesterday)
+    is RelativeTime.Days -> stringResource(R.string.map_time_days_ago, time.value)
+    is RelativeTime.Date -> dateText(time.millis)
+}
+
+@Composable
+private fun dateText(millis: Long): String =
+    SimpleDateFormat(stringResource(R.string.map_time_date_pattern), Locale.getDefault())
+        .format(Date(millis))
 
 @Composable
 private fun Hint(text: String) {

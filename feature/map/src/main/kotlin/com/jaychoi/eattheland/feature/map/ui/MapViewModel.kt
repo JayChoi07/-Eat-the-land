@@ -16,6 +16,7 @@ import com.jaychoi.eattheland.core.model.TrackingState
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -27,6 +28,7 @@ import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -40,11 +42,11 @@ import kotlinx.coroutines.launch
 @HiltViewModel
 class MapViewModel @Inject constructor(
     private val territory: TerritoryRepository,
-    players: PlayerRepository,
+    private val players: PlayerRepository,
     private val grid: HexGrid,
     private val tracking: TrackingRepository,
     private val locations: LocationRepository,
-    clock: Clock,
+    private val clock: Clock,
 ) : ViewModel() {
 
     /** 이 화면 안에서만 사는 상태. 스트림(셀·플레이어·추적·큐)과 combine 해 UiState 가 된다. */
@@ -57,14 +59,21 @@ class MapViewModel @Inject constructor(
         val lastKnown: LatLngPoint? = null,
         val isFollowing: Boolean = true,
         val showPermissionNotice: Boolean = false,
+        val selected: Selection? = null,
     )
 
+    /** 탭한 셀 + 그때 산책 중이었는지 — 산책 상태가 바뀌면 카드를 닫는다(스펙 C §9). */
+    private data class Selection(val cell: SelectedCell, val whileTracking: Boolean)
+
     private val local = MutableStateFlow(Local())
+    private var latestCells: List<Cell> = emptyList()
+    private var cardTimer: Job? = null
 
     @OptIn(ExperimentalCoroutinesApi::class)
     private val cells = local.map { it.regions }
         .distinctUntilChanged()
         .flatMapLatest(::cellsIn)
+        .onEach { latestCells = it }
 
     /** 추적 상태 + 지금 시각. 산책 중일 때만 1초마다 시각이 흘러 경과 시간이 다시 그려진다(스펙 C §8). */
     private data class WalkView(val state: TrackingState, val nowMillis: Long?)
@@ -115,6 +124,10 @@ class MapViewModel @Inject constructor(
             MapEvent.WalkStopped -> refreshLastKnown()
 
             MapEvent.SummaryDismissed -> tracking.onSummaryDismissed()
+
+            is MapEvent.MapTapped -> onMapTapped(event.point)
+
+            MapEvent.CellCardDismissed -> closeCard()
         }
     }
 
@@ -149,6 +162,7 @@ class MapViewModel @Inject constructor(
             isGpsWeak = walk.isTracking && walk.isGpsWeak && !l.isZoomedOut,
             showPermissionNotice = l.showPermissionNotice,
             summary = walk.lastSummary.takeIf { !walk.isTracking },
+            selectedCell = l.selected?.takeIf { it.whileTracking == walk.isTracking }?.cell,
         )
     }
 
@@ -191,6 +205,52 @@ class MapViewModel @Inject constructor(
         }
     }
 
+    private fun onMapTapped(point: LatLngPoint) {
+        val id = grid.cellOf(point)
+        val cell = latestCells.firstOrNull { it.id == id }
+        val current = local.value.selected?.cell
+        // 중립 셀이거나 같은 셀을 다시 탭하면 닫는다.
+        if (cell == null || current?.id == id) {
+            closeCard()
+            return
+        }
+        val me = uiState.value.player
+        val owner = if (me != null && cell.ownerUid == me.uid) CellOwner.Me else CellOwner.Loading
+        val time = relativeTime(clock.nowMillis(), cell.walkedAtMillis)
+        select(SelectedCell(id, owner, time))
+        if (owner == CellOwner.Loading) loadOwner(id, cell.ownerUid)
+    }
+
+    private fun select(cell: SelectedCell) {
+        val whileTracking = uiState.value.isTracking
+        local.update { it.copy(selected = Selection(cell, whileTracking)) }
+        cardTimer?.cancel()
+        cardTimer = viewModelScope.launch {
+            delay(CARD_TIMEOUT_MS)
+            closeCard()
+        }
+    }
+
+    private fun loadOwner(id: CellId, ownerUid: String) {
+        viewModelScope.launch {
+            val owner = players.nicknameOf(ownerUid)?.let { CellOwner.Named(it) } ?: CellOwner.Gone
+            local.update { l ->
+                val s = l.selected
+                if (s?.cell?.id == id) {
+                    l.copy(selected = s.copy(cell = s.cell.copy(owner = owner)))
+                } else {
+                    l
+                }
+            }
+        }
+    }
+
+    private fun closeCard() {
+        cardTimer?.cancel()
+        cardTimer = null
+        local.update { it.copy(selected = null) }
+    }
+
     private fun Cell.toPolygon(me: Player?) = CellPolygon(
         id = id,
         points = grid.boundary(id),
@@ -200,5 +260,6 @@ class MapViewModel @Inject constructor(
     private companion object {
         const val STOP_TIMEOUT_MS = 5_000L
         const val TICK_MS = 1_000L
+        const val CARD_TIMEOUT_MS = 5_000L
     }
 }

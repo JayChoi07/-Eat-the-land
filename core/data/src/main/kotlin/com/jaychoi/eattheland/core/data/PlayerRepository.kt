@@ -18,4 +18,7 @@ interface PlayerRepository {
      * Auth 삭제만 실패하면 로그아웃하고 성공. null = 성공.
      */
     suspend fun deleteAccount(): PlayerError?
+
+    /** 스펙 C §9 셀 카드용. 소유자 닉네임 — 문서가 없으면(탈퇴) null. 세션 메모리 캐시. */
+    suspend fun nicknameOf(uid: String): String?
 }

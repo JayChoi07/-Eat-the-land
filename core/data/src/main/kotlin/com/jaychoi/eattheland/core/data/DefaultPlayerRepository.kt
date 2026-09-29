@@ -10,6 +10,7 @@ import com.jaychoi.eattheland.core.network.NicknameDataSource
 import com.jaychoi.eattheland.core.network.UserDataSource
 import com.jaychoi.eattheland.core.network.UserDto
 import javax.inject.Inject
+import javax.inject.Singleton
 import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -18,8 +19,12 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 
+/** 닉네임 캐시(nicknameOf)가 프로세스 안에서 하나여야 하므로 싱글턴. */
+@Singleton
 class DefaultPlayerRepository @Inject constructor(
     private val auth: AuthDataSource,
     private val users: UserDataSource,
@@ -61,6 +66,21 @@ class DefaultPlayerRepository @Inject constructor(
         // Auth 삭제가 재인증 요구 등으로 실패하면 로그아웃으로 같은 결과(새 익명 계정)를 만든다.
         if (guard { auth.deleteCurrentUser() } != null) auth.signOut()
         null
+    }
+
+    /** uid → 닉네임(null = 문서 없음). 오류는 캐시하지 않는다. */
+    private val nicknameCache = mutableMapOf<String, String?>()
+    private val nicknameMutex = Mutex()
+
+    override suspend fun nicknameOf(uid: String): String? = nicknameMutex.withLock {
+        if (uid in nicknameCache) return@withLock nicknameCache[uid]
+        val loaded = runCatching { withContext(io) { users.get(uid)?.nickname } }
+        val failure = loaded.exceptionOrNull()
+        when (failure) {
+            null -> loaded.getOrNull().also { nicknameCache[uid] = it }
+            is CancellationException -> throw failure
+            else -> null
+        }
     }
 
     // R-23: 데이터 계층 경계에서 모든 실패를 도메인 에러로 바꾼다. 그 변환이 이 함수의 일이다.

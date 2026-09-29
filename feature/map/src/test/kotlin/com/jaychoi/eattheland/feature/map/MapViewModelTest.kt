@@ -13,8 +13,12 @@ import com.jaychoi.eattheland.core.testing.FakeTerritoryRepository
 import com.jaychoi.eattheland.core.testing.FakeTrackingRepository
 import com.jaychoi.eattheland.core.testing.MainDispatcherRule
 import com.jaychoi.eattheland.feature.map.ui.CameraSnapshot
+import com.jaychoi.eattheland.feature.map.ui.CellOwner
 import com.jaychoi.eattheland.feature.map.ui.MapEvent
+import com.jaychoi.eattheland.feature.map.ui.MapUiState
 import com.jaychoi.eattheland.feature.map.ui.MapViewModel
+import com.jaychoi.eattheland.feature.map.ui.RelativeTime
+import com.jaychoi.eattheland.feature.map.ui.SelectedCell
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
@@ -43,7 +47,7 @@ class MapViewModelTest {
         val other = grid.cellOf(LatLngPoint(37.5679, 126.9780))
         territory.cells.value = listOf(
             Cell(mine, "me", 0, 0, grid.regionOf(mine)),
-            Cell(other, "u2", 4, 0, grid.regionOf(other)),
+            Cell(other, "u2", 4, 1_000_000_000L, grid.regionOf(other)),
         )
     }
 
@@ -313,6 +317,127 @@ class MapViewModelTest {
             awaitItemUntil { it.summary != null }
             tracking.onWalkStarted(nowMillis = 2_000L) // 요약을 안 닫고 바로 재시작
             assertNull(awaitItemUntil { it.isTracking }.summary)
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    private val otherPoint = LatLngPoint(37.5679, 126.9780)
+
+    /** 셀 2개(내 것·u2 것)를 심고 카메라를 멈춰 셀이 로드된 상태로 만든다. */
+    private suspend fun ReceiveTurbine<MapUiState>.loadCells(vm: MapViewModel) {
+        vm.onEvent(MapEvent.CameraIdle(seoul, zoom = 16f, byUser = false))
+        awaitItemUntil { it.cells.size == 2 }
+    }
+
+    @Test
+    fun `남의 셀을 탭하면 닉네임을 조회해 카드로 보인다`() = runTest {
+        players.playerFlow.value = Player("me", "나", 0, 3)
+        players.nicknames["u2"] = "산책왕"
+        now = 1_000_000_000L + 3 * 60 * 60_000L
+        seedTwoCells()
+        val vm = viewModel()
+        vm.uiState.test {
+            loadCells(vm)
+            vm.onEvent(MapEvent.MapTapped(otherPoint))
+            val shown = awaitItemUntil { it.selectedCell?.owner is CellOwner.Named }
+            assertEquals(
+                SelectedCell(
+                    grid.cellOf(otherPoint),
+                    CellOwner.Named("산책왕"),
+                    RelativeTime.Hours(3),
+                ),
+                shown.selectedCell,
+            )
+            assertEquals(listOf("u2"), players.nicknameOfCalls)
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun `내 셀은 닉네임 조회 없이 내 땅`() = runTest {
+        players.playerFlow.value = Player("me", "나", 0, 3)
+        seedTwoCells()
+        val vm = viewModel()
+        vm.uiState.test {
+            loadCells(vm)
+            vm.onEvent(MapEvent.MapTapped(seoul))
+            val shown = awaitItemUntil { it.selectedCell != null }
+            assertEquals(CellOwner.Me, shown.selectedCell?.owner)
+            assertTrue(players.nicknameOfCalls.isEmpty())
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun `소유자 문서가 없으면 떠난 사람`() = runTest {
+        players.playerFlow.value = Player("me", "나", 0, 3)
+        seedTwoCells() // u2 는 nicknames 에 없음
+        val vm = viewModel()
+        vm.uiState.test {
+            loadCells(vm)
+            vm.onEvent(MapEvent.MapTapped(otherPoint))
+            val gone = awaitItemUntil { it.selectedCell?.owner == CellOwner.Gone }
+            assertEquals(CellOwner.Gone, gone.selectedCell?.owner)
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun `중립 셀 탭·같은 셀 재탭·명시적 닫기는 카드를 닫는다`() = runTest {
+        players.playerFlow.value = Player("me", "나", 0, 3)
+        players.nicknames["u2"] = "산책왕"
+        seedTwoCells()
+        val vm = viewModel()
+        vm.uiState.test {
+            loadCells(vm)
+            vm.onEvent(MapEvent.MapTapped(otherPoint))
+            awaitItemUntil { it.selectedCell != null }
+            vm.onEvent(MapEvent.MapTapped(LatLngPoint(37.6000, 126.9000))) // 중립
+            awaitItemUntil { it.selectedCell == null }
+            vm.onEvent(MapEvent.MapTapped(otherPoint))
+            awaitItemUntil { it.selectedCell != null }
+            vm.onEvent(MapEvent.MapTapped(otherPoint)) // 같은 셀 재탭
+            awaitItemUntil { it.selectedCell == null }
+            vm.onEvent(MapEvent.MapTapped(otherPoint))
+            awaitItemUntil { it.selectedCell != null }
+            vm.onEvent(MapEvent.CellCardDismissed)
+            awaitItemUntil { it.selectedCell == null }
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun `5초 뒤 자동으로 닫힌다`() = runTest {
+        players.playerFlow.value = Player("me", "나", 0, 3)
+        players.nicknames["u2"] = "산책왕"
+        seedTwoCells()
+        val vm = viewModel()
+        vm.uiState.test {
+            loadCells(vm)
+            vm.onEvent(MapEvent.MapTapped(otherPoint))
+            awaitItemUntil { it.selectedCell?.owner is CellOwner.Named }
+            advanceTimeBy(4_999)
+            runCurrent()
+            expectNoEvents()
+            advanceTimeBy(2)
+            awaitItemUntil { it.selectedCell == null }
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun `산책이 시작되면 카드가 닫힌다`() = runTest {
+        players.playerFlow.value = Player("me", "나", 0, 3)
+        players.nicknames["u2"] = "산책왕"
+        seedTwoCells()
+        val vm = viewModel()
+        vm.uiState.test {
+            loadCells(vm)
+            vm.onEvent(MapEvent.MapTapped(otherPoint))
+            awaitItemUntil { it.selectedCell != null }
+            tracking.onWalkStarted(nowMillis = 0L)
+            assertNull(awaitItemUntil { it.isTracking }.selectedCell)
             cancelAndIgnoreRemainingEvents()
         }
     }

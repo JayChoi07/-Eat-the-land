@@ -37,4 +37,23 @@ class CellDtoTest {
             CellDto(ownerUid = "u1", ownerColor = 0, region = "r").toDomain("x")?.capturedAtMillis,
         )
     }
+
+    @Test
+    fun `walkedAt 이 있으면 밟은 시각, 없으면 capturedAt 을 쓴다`() {
+        val withWalked = CellDto(
+            ownerUid = "u1",
+            ownerColor = 0,
+            capturedAt = Timestamp(1_700_000_100, 0),
+            walkedAt = Timestamp(1_700_000_000, 0),
+            region = "r",
+        ).toDomain("x")
+        assertEquals(1_700_000_000_000L, withWalked?.walkedAtMillis)
+        val withoutWalked = CellDto(
+            ownerUid = "u1",
+            ownerColor = 0,
+            capturedAt = Timestamp(1_700_000_100, 0),
+            region = "r",
+        ).toDomain("x")
+        assertEquals(1_700_000_100_000L, withoutWalked?.walkedAtMillis)
+    }
 }

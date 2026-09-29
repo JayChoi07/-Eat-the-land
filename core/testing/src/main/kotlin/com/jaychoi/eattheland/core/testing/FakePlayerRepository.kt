@@ -34,4 +34,13 @@ class FakePlayerRepository : PlayerRepository {
         if (deleteAccountError == null) playerFlow.value = null
         return deleteAccountError
     }
+
+    /** uid → 닉네임. 없는 uid 는 null(떠난 사람). */
+    val nicknames = mutableMapOf<String, String?>()
+    val nicknameOfCalls = mutableListOf<String>()
+
+    override suspend fun nicknameOf(uid: String): String? {
+        nicknameOfCalls += uid
+        return nicknames[uid]
+    }
 }

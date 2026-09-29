@@ -103,6 +103,7 @@ internal fun MapRoute(
                     viewModel.onEvent(MapEvent.CameraIdle(center, zoom, byUser))
                 },
                 onMapError = { viewModel.onEvent(MapEvent.MapLoadFailed) },
+                onMapClick = { viewModel.onEvent(MapEvent.MapTapped(it)) },
             )
         }
     }

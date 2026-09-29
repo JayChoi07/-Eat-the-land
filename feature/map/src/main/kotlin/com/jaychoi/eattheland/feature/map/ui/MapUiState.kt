@@ -21,6 +21,21 @@ data class CellPolygon(
 /** 마지막으로 카메라가 멈춘 곳. 회전으로 MapView 가 다시 만들어질 때 시작 위치로 쓴다. */
 data class CameraSnapshot(val center: LatLngPoint, val zoom: Int)
 
+/** 탭한 셀의 소유자(스펙 C §9). Loading 은 닉네임 조회 중. */
+sealed interface CellOwner {
+    data object Me : CellOwner
+
+    data object Loading : CellOwner
+
+    data class Named(val nickname: String) : CellOwner
+
+    /** 소유자 문서 없음(탈퇴) — "떠난 사람". */
+    data object Gone : CellOwner
+}
+
+/** 탭한 셀 카드. time 은 탭한 순간 기준으로 계산해 둔다(카드는 5초만 산다). */
+data class SelectedCell(val id: CellId, val owner: CellOwner, val time: RelativeTime)
+
 data class MapUiState(
     val player: Player? = null,
     val cells: List<CellPolygon> = emptyList(),
@@ -45,6 +60,8 @@ data class MapUiState(
     val showPermissionNotice: Boolean = false,
     /** 직전 산책 결과. 산책 중이 아니고 아직 닫지 않았을 때만. */
     val summary: WalkSummary? = null,
+    /** 탭한 셀 카드. null = 닫힘. */
+    val selectedCell: SelectedCell? = null,
 )
 
 sealed interface MapEvent {
@@ -67,4 +84,10 @@ sealed interface MapEvent {
 
     /** 결과 시트를 닫았다(확인·바깥 탭·뒤로). */
     data object SummaryDismissed : MapEvent
+
+    /** 지도 빈 곳·셀을 탭했다(카카오 onMapClicked). */
+    data class MapTapped(val point: LatLngPoint) : MapEvent
+
+    /** 셀 카드 닫기(다른 곳 탭·타이머는 ViewModel 이 처리, 이건 명시적 닫기). */
+    data object CellCardDismissed : MapEvent
 }

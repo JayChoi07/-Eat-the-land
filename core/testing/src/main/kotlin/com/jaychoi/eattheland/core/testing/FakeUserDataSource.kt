@@ -47,4 +47,14 @@ class FakeUserDataSource : UserDataSource {
         countCalls++
         return users.value.values.count { (it.cellCount ?: 0L) > than }
     }
+
+    var getError: DataSourceException? = null
+    var getCalls = 0
+        private set
+
+    override suspend fun get(uid: String): UserDto? {
+        getCalls++
+        getError?.let { throw it }
+        return users.value[uid]
+    }
 }

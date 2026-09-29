@@ -45,6 +45,12 @@ class FirestoreUserDataSource @Inject constructor() : UserDataSource {
             .count.toInt()
     }
 
+    override suspend fun get(uid: String): UserDto? = guard {
+        Firebase.firestore.document("users/$uid").get().await()
+            .takeIf { it.exists() }
+            ?.toObject(UserDto::class.java)
+    }
+
     @Suppress("TooGenericExceptionCaught")
     private inline fun <T> guard(block: () -> T): T = try {
         block()
