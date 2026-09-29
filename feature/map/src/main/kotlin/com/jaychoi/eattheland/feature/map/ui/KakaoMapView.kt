@@ -32,12 +32,14 @@ fun KakaoMapView(
     initialCenter: LatLngPoint,
     initialZoom: Int,
     onCameraIdle: (LatLngPoint, Float) -> Unit,
+    onMapError: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val lifecycleOwner = LocalLifecycleOwner.current
     val holder = remember { MapHolder() }
     // factory 는 한 번만 실행된다. 그 안의 콜백이 첫 컴포지션 값을 붙잡지 않도록 최신 값을 따로 든다.
     val currentOnCameraIdle by rememberUpdatedState(onCameraIdle)
+    val currentOnMapError by rememberUpdatedState(onMapError)
 
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
@@ -63,7 +65,8 @@ fun KakaoMapView(
                     object : MapLifeCycleCallback() {
                         override fun onMapDestroy() = Unit
 
-                        override fun onMapError(error: Exception) = Unit
+                        // 인증·통신 오류. 화면이 안내와 다시 시도를 띄운다(스펙 §5).
+                        override fun onMapError(error: Exception) = currentOnMapError()
                     },
                     object : KakaoMapReadyCallback() {
                         override fun onMapReady(map: KakaoMap) {

@@ -9,6 +9,7 @@ import com.jaychoi.eattheland.core.testing.FakeHexGrid
 import com.jaychoi.eattheland.core.testing.FakePlayerRepository
 import com.jaychoi.eattheland.core.testing.FakeTerritoryRepository
 import com.jaychoi.eattheland.core.testing.MainDispatcherRule
+import com.jaychoi.eattheland.feature.map.ui.CameraSnapshot
 import com.jaychoi.eattheland.feature.map.ui.MapEvent
 import com.jaychoi.eattheland.feature.map.ui.MapViewModel
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -121,6 +122,31 @@ class MapViewModelTest {
             cancelAndIgnoreRemainingEvents()
         }
         assertEquals(1, territory.requestedRegions.size)
+    }
+
+    @Test
+    fun `지도 시작 실패는 mapLoadFailed, 다시 시도는 attempt 를 올리고 실패를 지운다`() = runTest {
+        val vm = viewModel()
+        vm.uiState.test {
+            vm.onEvent(MapEvent.MapLoadFailed)
+            val failed = awaitItemUntil { it.mapLoadFailed }
+            assertEquals(0, failed.mapAttempt)
+            vm.onEvent(MapEvent.RetryMap)
+            val retried = awaitItemUntil { it.mapAttempt == 1 }
+            assertEquals(false, retried.mapLoadFailed)
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun `카메라가 멈춘 위치·줌을 기억한다`() = runTest {
+        val vm = viewModel()
+        vm.uiState.test {
+            vm.onEvent(MapEvent.CameraIdle(seoul, zoom = 15.7f))
+            val state = awaitItemUntil { it.camera != null }
+            assertEquals(CameraSnapshot(seoul, zoom = 15), state.camera)
+            cancelAndIgnoreRemainingEvents()
+        }
     }
 }
 

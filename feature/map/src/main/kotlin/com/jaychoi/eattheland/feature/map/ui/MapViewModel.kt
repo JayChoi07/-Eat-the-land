@@ -21,6 +21,7 @@ import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.update
 
 /**
  * R-12-02: 플랜 B 에서 추적 중/아님 상태가 생기면 "상태별 허용 이벤트 다름" 1개 해당 → 여전히 MVVM-UDF.
@@ -34,33 +35,46 @@ class MapViewModel @Inject constructor(
     private val grid: HexGrid,
 ) : ViewModel() {
 
-    private data class Viewport(
+    /** 이 화면 안에서만 사는 상태. 스트림(셀·플레이어)과 combine 해 UiState 가 된다. */
+    private data class Local(
         val regions: Set<CellId> = emptySet(),
         val isZoomedOut: Boolean = false,
+        val mapLoadFailed: Boolean = false,
+        val mapAttempt: Int = 0,
+        val camera: CameraSnapshot? = null,
     )
 
-    private val viewport = MutableStateFlow(Viewport())
+    private val local = MutableStateFlow(Local())
 
     @OptIn(ExperimentalCoroutinesApi::class)
-    private val cells = viewport.map { it.regions }
+    private val cells = local.map { it.regions }
         .distinctUntilChanged()
         .flatMapLatest(::cellsIn)
 
     val uiState: StateFlow<MapUiState> = combine(
         cells,
         players.currentPlayer,
-        viewport.map { it.isZoomedOut }.distinctUntilChanged(),
-    ) { list, player, zoomedOut ->
+        local,
+    ) { list, player, l ->
         MapUiState(
             player = player,
             cells = list.map { it.toPolygon(player) },
-            isZoomedOut = zoomedOut,
+            isZoomedOut = l.isZoomedOut,
+            mapLoadFailed = l.mapLoadFailed,
+            mapAttempt = l.mapAttempt,
+            camera = l.camera,
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), MapUiState())
 
     fun onEvent(event: MapEvent) {
         when (event) {
             is MapEvent.CameraIdle -> onCameraIdle(event)
+
+            MapEvent.MapLoadFailed -> local.update { it.copy(mapLoadFailed = true) }
+
+            MapEvent.RetryMap -> local.update {
+                it.copy(mapLoadFailed = false, mapAttempt = it.mapAttempt + 1)
+            }
         }
     }
 
@@ -69,10 +83,13 @@ class MapViewModel @Inject constructor(
 
     private fun onCameraIdle(event: MapEvent.CameraIdle) {
         val zoomedOut = event.zoom < MIN_OVERLAY_ZOOM
-        viewport.value = Viewport(
-            regions = if (zoomedOut) emptySet() else grid.regionsAround(event.center),
-            isZoomedOut = zoomedOut,
-        )
+        local.update {
+            it.copy(
+                regions = if (zoomedOut) emptySet() else grid.regionsAround(event.center),
+                isZoomedOut = zoomedOut,
+                camera = CameraSnapshot(event.center, event.zoom.toInt()),
+            )
+        }
     }
 
     private fun Cell.toPolygon(me: Player?) = CellPolygon(

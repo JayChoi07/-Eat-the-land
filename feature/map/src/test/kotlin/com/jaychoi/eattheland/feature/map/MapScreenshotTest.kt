@@ -28,7 +28,7 @@ class MapScreenshotTest {
     private fun capture(state: MapUiState) {
         composeRule.setContent {
             AppTheme {
-                MapScreen(state) {
+                MapScreen(state, onEvent = {}) {
                     Box(
                         Modifier.fillMaxSize().background(
                             MaterialTheme.colorScheme.surfaceContainer,
@@ -44,5 +44,9 @@ class MapScreenshotTest {
 
     @Test fun zoomed_out() = capture(
         MapUiState(player = Player("u", "땅주인", 0, 42), isZoomedOut = true),
+    )
+
+    @Test fun map_failed() = capture(
+        MapUiState(player = Player("u", "땅주인", 0, 42), mapLoadFailed = true),
     )
 }
