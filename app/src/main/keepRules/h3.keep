@@ -1,0 +1,3 @@
+# h3-android 의 네이티브(libh3-java.so)는 JNI_OnLoad 에서 자바 클래스를 이름으로 찾는다.
+# R8 이 지우면 라이브러리 로드에서 "java_class == null" 로 죽는다(릴리스 실기기 확인, 스펙 D §3).
+-keep class com.uber.h3core.** { *; }
