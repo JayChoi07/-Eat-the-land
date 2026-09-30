@@ -471,6 +471,25 @@ class MapViewModelTest {
             cancelAndIgnoreRemainingEvents()
         }
     }
+
+    @Test
+    fun `산책 시작으로 닫힌 카드의 셀을 바로 다시 탭하면 한 번에 열린다`() = runTest {
+        players.playerFlow.value = Player("me", "나", 0, 3)
+        players.nicknames["u2"] = "산책왕"
+        seedTwoCells()
+        val vm = viewModel()
+        vm.uiState.test {
+            loadCells(vm)
+            vm.onEvent(MapEvent.MapTapped(otherPoint))
+            awaitItemUntil { it.selectedCell != null }
+            tracking.onWalkStarted(nowMillis = 0L)
+            awaitItemUntil { it.isTracking && it.selectedCell == null }
+            vm.onEvent(MapEvent.MapTapped(otherPoint))
+            val reopened = awaitItemUntil { it.selectedCell != null }
+            assertEquals(grid.cellOf(otherPoint), reopened.selectedCell?.id)
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
 }
 
 /** turbine 보조: 조건을 만족하는 첫 아이템까지 소비한다. */

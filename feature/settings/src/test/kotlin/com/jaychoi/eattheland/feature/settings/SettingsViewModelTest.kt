@@ -122,7 +122,7 @@ class SettingsViewModelTest {
     fun `권한 상태는 Route 가 넣어 준다`() = runTest {
         val vm = viewModel()
         vm.onEvent(SettingsEvent.PermissionsRead(location = true, notification = false))
-        assertTrue(vm.uiState.value.locationGranted)
-        assertFalse(vm.uiState.value.notificationGranted)
+        assertEquals(true, vm.uiState.value.locationGranted)
+        assertEquals(false, vm.uiState.value.notificationGranted)
     }
 }

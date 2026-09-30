@@ -1,9 +1,9 @@
 package com.jaychoi.eattheland.feature.settings.ui
 
 import android.Manifest
+import android.app.NotificationManager
 import android.content.Context
 import android.content.pm.PackageManager
-import android.os.Build
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -54,7 +54,7 @@ internal fun SettingsRoute(
             SettingsEvent.PermissionsRead(
                 location = context.hasPermission(Manifest.permission.ACCESS_FINE_LOCATION) ||
                     context.hasPermission(Manifest.permission.ACCESS_COARSE_LOCATION),
-                notification = context.hasNotificationPermission(),
+                notification = context.notificationsAllowed(),
             ),
         )
     }
@@ -78,7 +78,6 @@ internal fun SettingsRoute(
 private fun Context.hasPermission(permission: String): Boolean =
     checkSelfPermission(permission) == PackageManager.PERMISSION_GRANTED
 
-/** 13 미만은 알림 권한이 없으므로 항상 허용으로 본다. */
-private fun Context.hasNotificationPermission(): Boolean =
-    Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
-        hasPermission(Manifest.permission.POST_NOTIFICATIONS)
+/** 시스템 설정에서 알림을 끈 경우까지 본다. 13 이상은 알림 권한 거부도 여기에 비친다. */
+internal fun Context.notificationsAllowed(): Boolean =
+    getSystemService(NotificationManager::class.java).areNotificationsEnabled()

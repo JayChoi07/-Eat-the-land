@@ -24,11 +24,16 @@ class SettingsScreenshotTest {
 
     private val me = Player("u", "땅주인", 0, 42)
 
+    /** 권한은 읽은 상태(둘 다 거부)로 채운다 — 읽기 전(null)은 상태 글자가 없어 골든이 달라진다. */
     private fun capture(state: SettingsUiState) {
+        val read = state.copy(
+            locationGranted = state.locationGranted ?: false,
+            notificationGranted = state.notificationGranted ?: false,
+        )
         composeRule.setContent {
             AppTheme {
                 SettingsScreen(
-                    state,
+                    read,
                     versionName = "1.0.0-debug",
                     onEvent = {},
                     onBack = {},

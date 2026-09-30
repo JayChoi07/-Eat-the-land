@@ -3,6 +3,7 @@ package com.jaychoi.eattheland
 import android.app.Activity
 import android.content.Context
 import android.content.ContextWrapper
+import android.os.SystemClock
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.padding
@@ -140,7 +141,8 @@ private fun DoubleBackExit(
     )
     val activity = LocalContext.current.findActivity()
     BackHandler(enabled = enabled) {
-        if (gate.press(System.currentTimeMillis())) {
+        // 벽시계는 시각 보정·사용자 변경으로 뛰거나 되감긴다 — 부팅 뒤 흐른 시간으로 잰다.
+        if (gate.press(SystemClock.elapsedRealtime())) {
             activity?.finish()
         } else {
             scope.launch {

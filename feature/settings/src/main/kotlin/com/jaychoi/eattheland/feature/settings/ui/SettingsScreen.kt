@@ -90,7 +90,14 @@ fun SettingsScreen(
             )
             Spacer(Modifier.height(24.dp))
             SectionTitle(stringResource(R.string.settings_section_about))
-            AboutSection(versionName, onOpenLicenses)
+            AboutSection(
+                versionName,
+                onOpenLicenses = {
+                    // 편집 중에 나가면 편집을 접는다 — 돌아왔을 때 쓰다 만 입력이 남지 않게.
+                    if (uiState.isEditingNickname) onEvent(SettingsEvent.CancelEdit)
+                    onOpenLicenses()
+                },
+            )
         }
     }
     if (uiState.showDeleteConfirm) {
@@ -163,7 +170,7 @@ private fun NicknameEditor(uiState: SettingsUiState, onEvent: (SettingsEvent) ->
 }
 
 @Composable
-private fun PermissionRow(label: Int, granted: Boolean, onOpenSystemSettings: () -> Unit) {
+private fun PermissionRow(label: Int, granted: Boolean?, onOpenSystemSettings: () -> Unit) {
     Row(
         modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -173,24 +180,29 @@ private fun PermissionRow(label: Int, granted: Boolean, onOpenSystemSettings: ()
             modifier = Modifier.weight(1f),
             style = MaterialTheme.typography.bodyLarge,
         )
-        Text(
-            stringResource(
-                if (granted) {
-                    R.string.settings_permission_granted
-                } else {
-                    R.string.settings_permission_denied
-                },
-            ),
-            color = if (granted) {
-                MaterialTheme.colorScheme.onSurfaceVariant
+        if (granted != null) PermissionStatus(granted, onOpenSystemSettings)
+    }
+}
+
+@Composable
+private fun PermissionStatus(granted: Boolean, onOpenSystemSettings: () -> Unit) {
+    Text(
+        stringResource(
+            if (granted) {
+                R.string.settings_permission_granted
             } else {
-                MaterialTheme.colorScheme.error
+                R.string.settings_permission_denied
             },
-        )
-        if (!granted) {
-            TextButton(onClick = onOpenSystemSettings) {
-                Text(stringResource(R.string.settings_open_system_settings))
-            }
+        ),
+        color = if (granted) {
+            MaterialTheme.colorScheme.onSurfaceVariant
+        } else {
+            MaterialTheme.colorScheme.error
+        },
+    )
+    if (!granted) {
+        TextButton(onClick = onOpenSystemSettings) {
+            Text(stringResource(R.string.settings_open_system_settings))
         }
     }
 }
@@ -253,7 +265,11 @@ private fun PlayerError.toMessage(): String = stringResource(
 private fun SettingsScreenPreview() {
     AppTheme {
         SettingsScreen(
-            SettingsUiState(player = Player("u", "땅주인", 0, 42), locationGranted = true),
+            SettingsUiState(
+                player = Player("u", "땅주인", 0, 42),
+                locationGranted = true,
+                notificationGranted = false,
+            ),
             versionName = "1.0.0",
             onEvent = {},
             onBack = {},

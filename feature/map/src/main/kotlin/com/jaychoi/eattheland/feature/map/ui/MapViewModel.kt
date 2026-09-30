@@ -211,7 +211,9 @@ class MapViewModel @Inject constructor(
     private fun onMapTapped(point: LatLngPoint) {
         val id = grid.cellOf(point)
         val cell = latestCells.firstOrNull { it.id == id }
-        val current = local.value.selected?.cell
+        // 산책 전환으로 숨겨진 카드는 떠 있는 게 아니다 — 같은 셀을 다시 탭하면 닫지 않고 연다.
+        val isTracking = tracking.state.value.isTracking
+        val current = local.value.selected?.takeIf { it.whileTracking == isTracking }?.cell
         // 중립 셀이거나 같은 셀을 다시 탭하면 닫는다.
         if (cell == null || current?.id == id) {
             closeCard()

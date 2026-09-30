@@ -92,10 +92,10 @@
 | 3 | Important | 탈퇴해도 진행 중 산책·전송 대기 큐가 새 계정으로 이어짐 | `DefaultPlayerRepository.deleteAccount` 가 프로필 삭제 뒤 `PendingCaptureQueue.clear()`(생성자 5개), `:app` `onDeleted` 가 `LocationTrackingService.stop` 후 온보딩. 테스트 2건 |
 | 4 | Important | 랭킹 세션 캐시가 계정 경계를 넘어 옛 계정의 내 순위 표시 | `cacheUid` 귀속 — uid 가 다르면 캐시 무시·실패 시 동봉도 안 함. 테스트 2건 |
 | 5 | Important | 기본 `get()` 이 오프라인에서 디스크 캐시로 성공해 새로고침 실패 배너가 안 뜸 | `topByCellCount` `get(Source.SERVER)` |
-| 6 | Minor | Android 12 이하 알림 차단 시 항상 "허용됨" | 이월 |
-| 7 | Minor | 편집 중 라이선스 push 뒤 복귀 시 입력 잔존 | 이월 |
-| 8 | Minor | 설정 첫 프레임 권한 "거부됨" 깜빡임 | 이월 |
-| 9 | Minor | 두 번 뒤로가기 벽시계 사용 | 이월 |
+| 6 | Minor | Android 12 이하 알림 차단 시 항상 "허용됨" | 반영(9/30) — `areNotificationsEnabled()` 로 판정. `NotificationsAllowedTest` 2건(sdk 31) |
+| 7 | Minor | 편집 중 라이선스 push 뒤 복귀 시 입력 잔존 | 반영(9/30) — 편집 중 라이선스로 나가면 `CancelEdit`. `SettingsScreenTest` 2건, 실기기 확인 |
+| 8 | Minor | 설정 첫 프레임 권한 "거부됨" 깜빡임 | 반영(9/30) — 권한 상태 `Boolean?`(null = 아직 안 읽음, 상태 글자·버튼 없음). `SettingsScreenTest` 1건, 골든 불변 |
+| 9 | Minor | 두 번 뒤로가기 벽시계 사용 | 반영(9/30) — `SystemClock.elapsedRealtime()`. 호출부 한 줄이라 단위 테스트 없음, 실기기 확인(3초 간격은 유지·연속 두 번은 종료) |
 
 리뷰어 보류 4건(C-2 범위·치팅 방지·계정 연동·`cellCount` 없는 레거시 문서)은 스펙 범위 밖 — 결함 아님(레저 `Final: Ruling:`).
 
