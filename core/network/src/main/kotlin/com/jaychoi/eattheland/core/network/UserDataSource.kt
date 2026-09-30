@@ -1,8 +1,13 @@
 package com.jaychoi.eattheland.core.network
 
+import androidx.annotation.Keep
 import kotlinx.coroutines.flow.Flow
 
-/** Firestore `users/{uid}` 문서. 필드는 전부 nullable — 서버 스키마 변경에 파싱이 죽지 않게 한다. */
+/**
+ * Firestore `users/{uid}` 문서. 필드는 전부 nullable — 서버 스키마 변경에 파싱이 죽지 않게 한다.
+ * Firestore 가 리플렉션으로 채우므로 R8 이 속성을 지우거나 이름을 바꾸면 안 된다(@Keep).
+ */
+@Keep
 data class UserDto(
     val nickname: String? = null,
     val nicknameLower: String? = null,

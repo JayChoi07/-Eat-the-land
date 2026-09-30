@@ -1,9 +1,12 @@
 package com.jaychoi.eattheland.core.network
 
+import androidx.annotation.Keep
 import com.google.firebase.Timestamp
 import com.jaychoi.eattheland.core.model.Cell
 import com.jaychoi.eattheland.core.model.CellId
 
+/** Firestore 가 리플렉션으로 채우므로 R8 이 속성을 지우거나 이름을 바꾸면 안 된다(@Keep). */
+@Keep
 data class CellDto(
     val ownerUid: String? = null,
     val ownerColor: Long? = null,

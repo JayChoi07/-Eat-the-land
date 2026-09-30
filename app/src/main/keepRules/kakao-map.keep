@@ -1,0 +1,5 @@
+# 카카오맵 SDK 는 네이티브(libK3fAndroid.so)가 JNI 로 클래스·필드를 이름으로 찾는다.
+# R8 이 지우거나 이름을 바꾸면 지도 시작에서 죽는다(릴리스 실기기 확인, 스펙 D §3).
+# 규칙은 공식 문서 그대로: https://apis.map.kakao.com/android_v2/docs/getting-started/quickstart/
+-keep class com.kakao.vectormap.** { *; }
+-keep interface com.kakao.vectormap.**
