@@ -266,7 +266,7 @@ service cloud.firestore {
 | release | `optimization { enable = true }` |
 | 카카오맵 | `com.kakao.maps.open:android:2.15.2`, maven `https://devrepo.kakao.com/nexus/repository/kakaomap-releases/`. 네이티브 앱 키는 `local.properties` `KAKAO_NATIVE_APP_KEY` → `:app` `BuildConfig` → App Startup `KakaoMapInitializer`가 `KakaoMapSdk.init`. CI는 secrets |
 | Firebase | `google-services.json` 커밋 제외, CI secrets 주입. FirebaseInitProvider 제거 + App Startup `FirebaseInitializer` |
-| 버전 | `versionCode` 수동, `versionName` `1.0.0` |
+| 버전 | 태그 빌드(CI): `versionName` 은 태그(`v1.0.1` → `1.0.1`), `versionCode` 는 release 워크플로 실행 번호. 로컬·검사 빌드는 `1`·`1.0.0`(플랜 D §5) |
 
 ## 8. 테스트
 
@@ -281,9 +281,11 @@ service cloud.firestore {
 
 ## 9. CI/CD
 
-- GitHub Actions: `ktlintCheck → detektDebug → testDebugUnitTest verifyRoborazziDebug → assembleDebug`, JDK 17, secrets `KAKAO_NATIVE_APP_KEY`·`GOOGLE_SERVICES_JSON`
-- 규칙 테스트: `rules/` 별도 잡 — `npm ci && npm test`(에뮬레이터)
-- 배포: `firebase deploy --only firestore:rules,firestore:indexes` (Spark에서 가능). Play 내부 테스트 → 비공개 테스트 → 프로덕션
+- 상세는 플랜 D 스펙 `2026-09-30-eat-the-land-plan-d-design.md`(정본). 요약:
+- `android-ci.yml`(main 푸시·PR·workflow_call): `check`(ktlint → detekt → 단위·Konsist·Roborazzi → assembleDebug) + `rules`(`rules/` `npm ci && npm test`, 에뮬레이터). JDK 17, 액션 SHA 고정, 기본 권한 `contents: read`
+- `release.yml`(`v*` 태그): 태그 형식 검사 → 검사 재실행 → 업로드 키 서명 `bundleRelease` → 아티팩트 → 변수 `PLAY_UPLOAD_ENABLED` 가 true 면 키 없는 인증(WIF)으로 Play 내부 테스트 트랙에 draft 업로드. secret 은 GitHub 환경 `play-internal`(`v*` 태그 전용)
+- 규칙 배포는 수동: `firebase deploy --only firestore:rules,firestore:indexes`(개인 계정, 태그보다 먼저). 절차는 `docs/release.md`
+- Play: 내부 테스트(2026-09-30 시작) → 비공개 테스트 → 프로덕션
 
 ## 10. 구현 순서
 

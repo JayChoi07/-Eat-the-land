@@ -1,0 +1,62 @@
+# 플랜 D 표준 준수 보고 — 릴리스 빌드 · CI · Play 내부 테스트 배포
+
+작성일: 2026-09-30 · 스펙: `docs/superpowers/specs/2026-09-30-eat-the-land-plan-d-design.md` · 범위: `a66d15c..` (main) + 태그 `v1.0.0`·`v1.0.1`
+
+## 결과
+
+| 항목 | 결과 |
+|---|---|
+| 릴리스 빌드 | 처음 만듦. R8 크래시 3건을 실기기(S22, Android 16)에서 잡아 고침(아래) |
+| 서명 | 업로드 키스토어 생성(로컬, 커밋 제외), `signingConfigs`(값 없으면 서명 없이 빌드) |
+| 버전 | `VERSION_NAME`·`VERSION_CODE` 환경변수 입구. `v1.0.0` → `1.0.0 (1)`, `v1.0.1` → `1.0.1 (2)` 확인 |
+| CI | `rules` 잡(26건) 추가, `release.yml` 신규. main 푸시·태그 2회 모두 초록 |
+| GitHub | 환경 `play-internal`(`v*` 태그 전용) secret 8개, 저장소 secret 1개, 변수 `PLAY_UPLOAD_ENABLED`, `v*` 태그 보호 규칙 |
+| Google Cloud | API 3종 사용 설정, 서비스 계정 `play-publisher@…`, WIF 풀 `github`·공급자 `eat-the-land`(저장소 + `refs/tags/v*` 조건) |
+| Play Console | 앱 `땅따먹기`(ID 4973985570473203606) 생성, 개인정보처리방침 URL, 테스터 목록 `내부 테스터`(소유자 1명), 서비스 계정 초대(앱 정보 보기 + 테스트 트랙 출시), 1.0.0 (1) 수동 출시, 1.0.1 (2) **CI 자동 업로드 → 초안 → 출시** |
+| 카카오 | 릴리스 네이티브 앱 키에 키 해시 5개(기존 1 + 업로드 키 1 + Play 서명 키 3) |
+| 문서 | `docs/privacy/index.md`(GitHub Pages 공개), `docs/release.md`, 기반 스펙 §7·§9 동기화 |
+
+## R8 크래시 (릴리스 실기기)
+
+| # | 증상 | 원인 | 처리 |
+|---|---|---|---|
+| 1 | 닉네임 등록 직후 `No properties to serialize found on class` | Firestore 가 리플렉션으로 채우는 `UserDto`·`CellDto` 속성을 R8 이 지움 | `@Keep`(androidx.annotation, firebase 를 통해 컴파일 클래스패스에 있음) |
+| 2 | 지도 시작 시 SIGABRT `MapViewHolder` 없음 | 카카오맵 네이티브 JNI 가 클래스를 이름으로 찾음 | `app/src/main/keepRules/kakao-map.keep`(공식 문서 규칙 2줄) |
+| 3 | `JNI_OnLoad` `java_class == null` | h3-android 네이티브가 자바 클래스를 이름으로 찾음 | `app/src/main/keepRules/h3.keep` |
+
+keep 규칙 위치는 AGP 9.3+ 의 `src/main/keepRules/*.keep` 소스셋(스펙의 `proguard-rules.pro` 대신 — Ruling).
+
+## Rulings (실행 중 결정)
+
+| # | 결정 | 이유 |
+|---|---|---|
+| 1 | keep 규칙은 `src/main/keepRules/` 소스셋 | AGP 9.3+ `optimization` DSL 의 공식 방식 |
+| 2 | 릴리스 앱 계정 닉네임 `jay100409` | 검증에 필요, 설정에서 변경 가능 |
+| 3 | 앱 콘텐츠 선언은 개인정보처리방침 URL 만 | 내부 테스트에 필요한 것은 테스터·버전뿐. 나머지(데이터 보안·콘텐츠 등급 등)는 비공개 테스트 전에 |
+| 4 | Play "자동 보호"(설치 프로그램 검사)는 기본값(사용) 유지 | Play 로 받은 빌드에만 적용, 로컬 adb 설치는 영향 없음. 앱 무결성에서 바꿀 수 있음 |
+| 5 | Play 서명 키 해시는 3개 전부 등록(이전 키·기존 키·양자 내성 키) | 어느 인증서로 서명해 내려주는지 문서로 확정 못 해 전부 등록 |
+| 6 | 1.0.0 (1)·1.0.1 (2) 출시는 확인 없이 진행 | 테스터가 소유자 계정 1명뿐, 내부 테스트는 심사 없음 |
+| 7 | gcloud 는 별도 구성 `eat-the-land`(개인 계정), 기본 구성(회사 계정)은 손대지 않음 | 계정 분리 원칙 |
+
+## 검증
+
+| 확인 | 결과 |
+|---|---|
+| 릴리스 빌드 실기기 한 바퀴 | 온보딩·지도·셀 카드(`jay100409아 · 16시간 전`)·산책 1분·결과 시트·랭킹·설정 ✅, 크래시 0 |
+| 서명 값 없는 빌드 | `keystore.properties` 없이 `assembleRelease` 성공(unsigned), 4게이트 통과 |
+| `rules` 잡 | main 푸시·태그 2회 26/26 |
+| 버전 계산 | AAB 매니페스트 `1.0.0`/`1`, `1.0.1`/`2` |
+| 스위치 꺼짐 | `v1.0.0`: auth·업로드 skipped, 아티팩트만 |
+| 스위치 켜짐 | `v1.0.1`: auth·업로드 success, Console 에 초안 `1.0.1 (2)` 생성 → 출시 |
+| secret 미노출 | 로그에 키스토어 비밀번호 0회. `KEY_ALIAS`=`upload` 라 로그의 "upload" 단어가 `***` 로 가려짐(무해) |
+| 초안 앱 제약 | 확인됨 — API 업로드는 초안, Console 에서 "출시" 필요 |
+| 서비스 계정 반영 시간 | 초대 직후 즉시 동작(24시간 대기 없음) |
+| Play 에서 받은 앱의 지도 | **미확인** — 테스터 기기에서 설치해 봐야 함(사용자) |
+
+## 미검증 · 남은 것
+
+- Play 에서 내려받은 빌드로 지도·캡처 확인(테스터 기기).
+- 앱이 초안 상태를 벗어나는 시점 — 벗어나면 `release.yml` 의 `status: draft` 를 `completed` 로 바꿀 수 있다.
+- 테스터 이메일 추가(사용자 제공), 앱 콘텐츠 선언 나머지(비공개 테스트 전).
+- Codex 최종 리뷰는 아직 돌리지 않음.
+- 스펙 §9 "태그 형식 거부" 는 실제 잘못된 태그로 확인하지 않음(코드 검토만).
