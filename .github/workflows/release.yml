@@ -1,0 +1,129 @@
+name: release
+
+# 버전 태그(v1.0.1)를 푸시하면 검사 → 서명된 AAB → Play 내부 테스트 트랙 업로드 (스펙 D §6).
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+jobs:
+  # 태그 형식이 다르면 검사·빌드를 시작하기 전에 멈춘다 (스펙 D §5).
+  tag:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      version-name: ${{ steps.version.outputs.name }}
+    steps:
+      - id: version
+        name: version from tag
+        run: |
+          if [[ ! "$GITHUB_REF_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::태그는 v<major>.<minor>.<patch> 형식이어야 한다: $GITHUB_REF_NAME"
+            exit 1
+          fi
+          echo "name=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+  verify:
+    needs: tag
+    uses: ./.github/workflows/android-ci.yml
+    secrets:
+      KAKAO_NATIVE_APP_KEY_DEBUG: ${{ secrets.KAKAO_NATIVE_APP_KEY_DEBUG }}
+
+  release:
+    needs: [tag, verify]
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    # 배포 secret 은 이 환경에만 있고, 환경은 v* 태그에서만 열린다 (스펙 D §8).
+    environment: play-internal
+    permissions:
+      contents: read
+      id-token: write # 키 없는 인증(Workload Identity Federation)
+    env:
+      VERSION_NAME: ${{ needs.tag.outputs.version-name }}
+      VERSION_CODE: ${{ github.run_number }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
+        with:
+          validate-wrappers: true
+          cache-read-only: true
+
+      # 서명 값이 없으면 빌드는 서명 없이 성공해 버린다(app/build.gradle.kts). 여기서 먼저 막는다.
+      - name: require secrets
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+          GOOGLE_SERVICES_JSON: ${{ secrets.GOOGLE_SERVICES_JSON }}
+          KAKAO_NATIVE_APP_KEY: ${{ secrets.KAKAO_NATIVE_APP_KEY }}
+        run: |
+          missing=0
+          for name in KEYSTORE_BASE64 KEYSTORE_PASSWORD KEY_ALIAS KEY_PASSWORD \
+            GOOGLE_SERVICES_JSON KAKAO_NATIVE_APP_KEY; do
+            if [ -z "${!name}" ]; then
+              echo "::error::secret 이 비어 있다: $name"
+              missing=1
+            fi
+          done
+          exit "$missing"
+
+      # 값은 출력하지 않는다. 키스토어는 작업 폴더 밖 임시 폴더에 둔다 — 아티팩트에 섞이지 않게.
+      - name: restore keystore and google-services.json
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          GOOGLE_SERVICES_JSON: ${{ secrets.GOOGLE_SERVICES_JSON }}
+        run: |
+          printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/upload-keystore.jks"
+          printf '%s' "$GOOGLE_SERVICES_JSON" > app/google-services.json
+          echo "KEYSTORE_FILE=$RUNNER_TEMP/upload-keystore.jks" >> "$GITHUB_ENV"
+
+      - name: bundle
+        run: ./gradlew bundleRelease --no-daemon
+        env:
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+          KAKAO_NATIVE_APP_KEY: ${{ secrets.KAKAO_NATIVE_APP_KEY }}
+
+      # 업로드가 꺼져 있거나 실패해도 AAB 는 남는다 — 수동 업로드에 쓴다.
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: release-${{ env.VERSION_NAME }}-${{ env.VERSION_CODE }}
+          if-no-files-found: error
+          path: |
+            app/build/outputs/bundle/release/app-release.aab
+            app/build/outputs/mapping/release/mapping.txt
+
+      # 업로드 스위치: 저장소 변수 PLAY_UPLOAD_ENABLED 가 'true' 일 때만 (스펙 D §6).
+      - id: auth
+        if: vars.PLAY_UPLOAD_ENABLED == 'true'
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
+        with:
+          workload_identity_provider: ${{ secrets.WIF_PROVIDER }}
+          service_account: ${{ secrets.WIF_SERVICE_ACCOUNT }}
+
+      # 한 번도 정식 게시된 적 없는 앱은 API 로 draft 만 만들 수 있다. 출시는 Console 에서 누른다.
+      - name: upload to Play (internal, draft)
+        if: vars.PLAY_UPLOAD_ENABLED == 'true'
+        uses: r0adkll/upload-google-play@e738b9dd8f2476ea806d921b64aacd24f34515a5 # v1.1.5
+        with:
+          serviceAccountJson: ${{ steps.auth.outputs.credentials_file_path }}
+          packageName: com.jaychoi.eattheland
+          releaseFiles: app/build/outputs/bundle/release/app-release.aab
+          tracks: internal
+          status: draft
+          releaseName: ${{ env.VERSION_NAME }} (${{ env.VERSION_CODE }})
+          mappingFile: app/build/outputs/mapping/release/mapping.txt
+
+      - name: remove keystore and google-services.json
+        if: always()
+        run: rm -f "$RUNNER_TEMP/upload-keystore.jks" app/google-services.json

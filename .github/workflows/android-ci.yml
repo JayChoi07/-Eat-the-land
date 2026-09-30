@@ -4,30 +4,40 @@ on:
   pull_request:
   push:
     branches: [main]
+  # release.yml 이 태그 커밋을 같은 검사로 다시 확인한다 (스펙 D §6).
+  workflow_call:
+    secrets:
+      KAKAO_NATIVE_APP_KEY_DEBUG:
+        required: false
+
+# 검사 잡은 저장소를 읽기만 한다. Play 인증 토큰(id-token)은 release 잡에만 준다 (스펙 D §8).
+permissions:
+  contents: read
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+# 액션은 커밋 SHA 로 고정한다 — 태그가 바뀌어도 실행되는 코드가 바뀌지 않게 (스펙 D §8).
 jobs:
   check:
     runs-on: ubuntu-latest
     timeout-minutes: 40
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: actions/setup-java@v6
+      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
         with:
           distribution: temurin
           java-version: '17'
 
-      - uses: gradle/actions/setup-gradle@v6
+      - uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
         with:
           validate-wrappers: true
           cache-read-only: ${{ github.ref != 'refs/heads/main' }}
 
       # app/google-services.json 은 커밋하지 않는다. 네 게이트는 실제 Firebase 값 없이 돌므로
-      # 패키지 이름만 맞춘 자리표시 파일을 둔다. 배포용 빌드는 실제 파일을 secret 으로 넣는다(플랜 C).
+      # 패키지 이름만 맞춘 자리표시 파일을 둔다. 배포용 빌드는 release.yml 이 실제 파일을 secret 으로 넣는다.
       - name: google-services.json (placeholder)
         run: cp .github/ci/google-services.json app/google-services.json
 
@@ -51,8 +61,39 @@ jobs:
           KAKAO_NATIVE_APP_KEY_DEBUG: ${{ secrets.KAKAO_NATIVE_APP_KEY_DEBUG }}
 
       # R-31-06: 스크린샷 diff 는 성공한 실행에서도 봐야 하므로 always()
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: always()
         with:
           name: reports
           path: '**/build/reports/**'
+
+  # 보안 규칙 테스트. Firestore 에뮬레이터 + Jest — 프로젝트 ID 가 demo-* 라 실서버에 닿지 않고
+  # secret 도 필요 없다. 실서버 배포는 사람이 한다 (스펙 D 결정 5).
+  rules:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: rules
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # 에뮬레이터는 JVM 에서 돈다.
+      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: rules/package-lock.json
+
+      # 로컬에서 규칙을 검증·배포한 CLI 와 같은 버전으로 고정한다.
+      - name: firebase-tools
+        run: npm install --global firebase-tools@14.24.0
+
+      - run: npm ci
+
+      - run: npm test

@@ -15,6 +15,13 @@ fun Project.localProperty(name: String): String {
     return (props[name] as String?) ?: System.getenv(name) ?: ""
 }
 
+/** 서명 값의 입구: 루트 keystore.properties(로컬) → 환경변수(CI). 커밋하지 않는다 (R-19-12). */
+fun Project.signingProperty(name: String): String {
+    val file = rootProject.file("keystore.properties")
+    val props = Properties().apply { if (file.exists()) file.inputStream().use { load(it) } }
+    return (props[name] as String?) ?: System.getenv(name) ?: ""
+}
+
 plugins {
     alias(libs.plugins.convention.android.application)
     alias(libs.plugins.convention.android.application.compose)
@@ -30,9 +37,10 @@ android {
         applicationId = "com.jaychoi.eattheland"
         // compileSdk 는 컨벤션 플러그인 상수에서 오고, targetSdk 는 :app 에 같은 값으로 명시한다 (R-19-01).
         targetSdk = 37
-        // versionCode·versionName 부여 방식은 19가 규칙으로 정하지 않는다(출처 침묵). 프로젝트 지침에서 정한다.
-        versionCode = 1
-        versionName = "1.0.0"
+        // 태그 빌드(CI)는 환경변수로 넣는다 — versionName 은 태그, versionCode 는 실행 번호(스펙 D §5).
+        // 로컬·검사 빌드는 기본값. Play 에 올리는 AAB 는 CI 에서만 만든다.
+        versionCode = System.getenv("VERSION_CODE")?.toIntOrNull() ?: 1
+        versionName = System.getenv("VERSION_NAME") ?: "1.0.0"
         // 카카오맵 SDK 와 h3-android 는 ARM 네이티브만 제공한다. x86 바이너리가 섞이면 x86 기기·에뮬레이터가
         // x86 ABI 로 실행하다 UnsatisfiedLinkError 로 죽으므로 ARM 만 담는다(에뮬레이터는 ARM 변환으로 실행).
         ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a") }
@@ -41,6 +49,22 @@ android {
     // 카카오맵 네이티브 앱 키. 새 카카오 콘솔은 키당 패키지 1개라 debug/release 키가 다르다 (스펙 §7).
     // local.properties → BuildConfig, CI 는 같은 이름의 환경변수 (R-19-13, R-19-14, R-31-08).
     buildFeatures { buildConfig = true }
+
+    // 업로드 키 서명(스펙 D §4). 값이 하나라도 없으면 서명을 걸지 않는다 — secret 없는 빌드(포크 PR·검사 잡)가
+    // 깨지지 않게. :app 만 쓰는 설정이라 컨벤션 플러그인으로 올리지 않는다 (R-10-14).
+    val signingKeys = listOf("KEYSTORE_FILE", "KEYSTORE_PASSWORD", "KEY_ALIAS", "KEY_PASSWORD")
+    val signingValues = signingKeys.associateWith { signingProperty(it) }
+    val hasSigning = signingValues.values.none { it.isEmpty() }
+    signingConfigs {
+        if (hasSigning) {
+            create("release") {
+                storeFile = rootProject.file(signingValues.getValue("KEYSTORE_FILE"))
+                storePassword = signingValues.getValue("KEYSTORE_PASSWORD")
+                keyAlias = signingValues.getValue("KEY_ALIAS")
+                keyPassword = signingValues.getValue("KEY_PASSWORD")
+            }
+        }
+    }
 
     // buildType 은 debug·release 둘뿐이다 (R-19-04).
     buildTypes {
@@ -58,6 +82,7 @@ android {
             // AGP 9.3+ 의 optimization DSL 한 줄 (R-19-04).
             // isMinifyEnabled·isShrinkResources·proguardFiles 를 따로 적지 않는다.
             optimization { enable = true }
+            if (hasSigning) signingConfig = signingConfigs.getByName("release")
             buildConfigField(
                 "String",
                 "KAKAO_NATIVE_APP_KEY",
@@ -68,9 +93,6 @@ android {
 
     // productFlavors 블록은 두지 않는다 — 배포 단위가 갈릴 때만 만든다 (R-19-06).
 }
-
-// 서명 자료는 루트 keystore.properties 에서 읽고 커밋하지 않는다 (R-19-12). :app 만 쓰는 설정이라
-// 컨벤션 플러그인으로 올리지 않는다 (R-10-14). 실제 릴리스를 낼 때 signingConfigs 를 여기에 추가한다.
 
 dependencies {
     // :app 만 feature 를 안다. feature 끼리는 서로 의존하지 않는다 (R-10-02, R-10-08).
